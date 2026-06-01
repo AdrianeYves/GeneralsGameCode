@@ -734,7 +734,7 @@ void TileTool::mouseDown(TTrackingMode m, CPoint viewPt, WbView* pView, CWorldBu
 					break;
 				case 2:
 					paintBlobRegion(m_htMapEditCopy, cx, cy, radius, texClass, boundaryTexClass);
-					break;
+					break;  
 				case 3:
 					paintScatter(m_htMapEditCopy, cx, cy, radius, texClass,
 								TerrainMaterial::getPaintDensity());
