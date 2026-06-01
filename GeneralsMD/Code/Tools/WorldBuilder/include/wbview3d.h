@@ -168,6 +168,20 @@ protected:
 	afx_msg void OnUpdateOnWindowLODMode2(CCmdUI* pCmdUI);
 	afx_msg void OnWindowLODMode3();
 	afx_msg void OnUpdateOnWindowLODMode3(CCmdUI* pCmdUI);
+	afx_msg void OnMSAANone();
+	afx_msg void OnMSAA2X();
+	afx_msg void OnMSAA4X();
+	afx_msg void OnMSAA8X();
+	afx_msg void OnUpdateMSAANone(CCmdUI* pCmdUI);
+	afx_msg void OnUpdateMSAA2X(CCmdUI* pCmdUI);
+	afx_msg void OnUpdateMSAA4X(CCmdUI* pCmdUI);
+	afx_msg void OnUpdateMSAA8X(CCmdUI* pCmdUI);
+	afx_msg void OnTexFilterDefault();
+	afx_msg void OnTexFilterAniso16X();
+	afx_msg void OnUpdateTexFilterDefault(CCmdUI* pCmdUI);
+	afx_msg void OnUpdateTexFilterAniso16X(CCmdUI* pCmdUI);
+	afx_msg void OnTextShadow();
+	afx_msg void OnUpdateTextShadow(CCmdUI* pCmdUI);
 	afx_msg void OnViewShowSubDraw();
 	afx_msg void OnUpdateViewShowSubDraw(CCmdUI* pCmdUI);
 	afx_msg void OnViewShowBaseRadius();
@@ -245,6 +259,9 @@ private:
 
 	Bool m_showBuildZoneFeedback;
 	Int m_lod;
+	Bool m_textShadow;
+	void setMSAA(D3DMULTISAMPLE_TYPE type);
+	void setTextureFilter(int mode);
 
 
 	ID3DXFont*							m3DFont;

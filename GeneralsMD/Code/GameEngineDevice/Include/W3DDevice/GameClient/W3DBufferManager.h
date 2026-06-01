@@ -41,7 +41,7 @@
 #define	MIN_SLOT_SIZE_SHIFT	5 //used for division by MIN_SLOT_SIZE
 #define MAX_VERTEX_BUFFERS_CREATED	256 //maximum number of D3D vertex buffers allowed to create per vertex type.
 #define DEFAULT_VERTEX_BUFFER_SIZE	8192	//this size ends up generating VB's of about 256Kbytes
-#define MAX_NUMBER_SLOTS	16384		//maximum number of slots that can be allocated.
+#define MAX_NUMBER_SLOTS	65536		//maximum number of slots that can be allocated.
 
 #define MAX_IB_SIZES 512 //number of different sized IB slots allowed (goes all the way up to 65536)
 #define MAX_INDEX_BUFFERS_CREATED	256

@@ -24,6 +24,7 @@
 #include "resource.h"
 #include "wwmath.h"
 #include "ww3d.h"
+#include "texturefilter.h"
 #include "scene.h"
 #include "rendobj.h"
 #include "camera.h"
@@ -639,6 +640,16 @@ WbView3d::WbView3d() :
 
 	
 	m_lod = ::AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "LODMode", 2);
+	m_textShadow = ::AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "TextShadow", 1) != 0;
+
+	int msaaMode = ::AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "MSAAMode", 0);
+	DX8Wrapper::Set_Multi_Sample_Type((D3DMULTISAMPLE_TYPE)msaaMode);
+
+	int texFilterMode = ::AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "TexFilterMode", 0);
+	if (texFilterMode == 1) {
+		TextureFilterClass::Set_Max_Anisotropy(16);
+		WW3D::Set_Texture_Filter(TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC);
+	}
 
 	m_cameraOffset.x = m_cameraOffset.y = m_cameraOffset.z = 1;
 
@@ -2938,6 +2949,21 @@ BEGIN_MESSAGE_MAP(WbView3d, WbView)
 	ON_COMMAND(ID_LOD_MODE_3, OnWindowLODMode3)
 	ON_UPDATE_COMMAND_UI(ID_LOD_MODE_3, OnUpdateOnWindowLODMode3)
 
+	ON_COMMAND(ID_MSAA_NONE, OnMSAANone)
+	ON_UPDATE_COMMAND_UI(ID_MSAA_NONE, OnUpdateMSAANone)
+	ON_COMMAND(ID_MSAA_2X, OnMSAA2X)
+	ON_UPDATE_COMMAND_UI(ID_MSAA_2X, OnUpdateMSAA2X)
+	ON_COMMAND(ID_MSAA_4X, OnMSAA4X)
+	ON_UPDATE_COMMAND_UI(ID_MSAA_4X, OnUpdateMSAA4X)
+	ON_COMMAND(ID_MSAA_8X, OnMSAA8X)
+	ON_UPDATE_COMMAND_UI(ID_MSAA_8X, OnUpdateMSAA8X)
+	ON_COMMAND(ID_TEXFILTER_DEFAULT, OnTexFilterDefault)
+	ON_UPDATE_COMMAND_UI(ID_TEXFILTER_DEFAULT, OnUpdateTexFilterDefault)
+	ON_COMMAND(ID_TEXFILTER_ANISO16X, OnTexFilterAniso16X)
+	ON_UPDATE_COMMAND_UI(ID_TEXFILTER_ANISO16X, OnUpdateTexFilterAniso16X)
+	ON_COMMAND(ID_TEXT_SHADOW, OnTextShadow)
+	ON_UPDATE_COMMAND_UI(ID_TEXT_SHADOW, OnUpdateTextShadow)
+
 	ON_COMMAND(ID_REVALIDATE_RENDER, OnRefreshSceneObjects)
 	//}}AFX_MSG_MAP
 END_MESSAGE_MAP()
@@ -3312,13 +3338,21 @@ void WbView3d::drawStatusLabels(CPoint basePt, int offset, const char* text, voi
 	AsciiString label = text;
 
 	if (m3DFont && !hdc) {
+		if (m_textShadow) {
+			RECT shadowRct = { labelPt.x + 2, labelPt.y + 1, labelPt.x + 2, labelPt.y + 1 };
+			((ID3DXFont*)m3DFont)->DrawText(label.str(), label.getLength(), &shadowRct,
+				DT_LEFT | DT_NOCLIP | DT_TOP | DT_SINGLELINE, 0xFF000000);
+		}
 		DWORD textColor = 0xFF000000 | (red << 16) | (green << 8) | blue;
 		RECT rct = { labelPt.x + 1, labelPt.y, labelPt.x + 1, labelPt.y };
-
 		((ID3DXFont*)m3DFont)->DrawText(label.str(), label.getLength(), &rct,
 			DT_LEFT | DT_NOCLIP | DT_TOP | DT_SINGLELINE, textColor);
 	} else if (!m3DFont) {
 		::SetBkMode(hdc, TRANSPARENT);
+		if (m_textShadow) {
+			::SetTextColor(hdc, RGB(0, 0, 0));
+			::TextOut(hdc, labelPt.x + 2, labelPt.y + 1, label.str(), label.getLength());
+		}
 		::SetTextColor(hdc, RGB(red, green, blue));
 		::TextOut(hdc, labelPt.x + 1, labelPt.y, label.str(), label.getLength());
 	}
@@ -3527,12 +3561,21 @@ void WbView3d::drawLabels(HDC hdc)
 				labelPt.y += i * 15;
 
 				if (m3DFont && !hdc) {
+					if (m_textShadow) {
+						RECT shadowRct = { labelPt.x + 2, labelPt.y + 1, labelPt.x + 2, labelPt.y + 1 };
+						m3DFont->DrawText(label.str(), label.getLength(), &shadowRct,
+							DT_LEFT | DT_NOCLIP | DT_TOP | DT_SINGLELINE, 0xFF000000);
+					}
 					DWORD textColor = 0xFF000000 | (red << 16) | (green << 8) | blue;
 					RECT rct = { labelPt.x + 1, labelPt.y, labelPt.x + 1, labelPt.y };
 					m3DFont->DrawText(label.str(), label.getLength(), &rct,
 						DT_LEFT | DT_NOCLIP | DT_TOP | DT_SINGLELINE, textColor);
 				} else if (!m3DFont) {
 					::SetBkMode(hdc, TRANSPARENT);
+					if (m_textShadow) {
+						::SetTextColor(hdc, RGB(0, 0, 0));
+						::TextOut(hdc, labelPt.x + 2, labelPt.y + 1, label.str(), label.getLength());
+					}
 					::SetTextColor(hdc, RGB(red, green, blue));
 					::TextOut(hdc, labelPt.x + 1, labelPt.y, label.str(), label.getLength());
 				}
@@ -3610,15 +3653,27 @@ void WbView3d::drawLabels(HDC hdc)
 
 					// Draw the label for each point
 					if (m3DFont && !hdc) {
+						if (m_textShadow) {
+							RECT shadowRct;
+							shadowRct.top = shadowRct.bottom = pt.y + 1;
+							shadowRct.left = shadowRct.right = pt.x + 1;
+							m3DFont->DrawText(triggerName.str(), triggerName.getLength(), &shadowRct,
+											DT_LEFT | DT_NOCLIP | DT_TOP | DT_SINGLELINE,
+											0xFF000000);
+						}
 						RECT rct;
 						rct.top = rct.bottom = pt.y;
 						rct.left = rct.right = pt.x;
-						m3DFont->DrawText(triggerName.str(), triggerName.getLength(), &rct, 
+						m3DFont->DrawText(triggerName.str(), triggerName.getLength(), &rct,
 										DT_LEFT | DT_NOCLIP | DT_TOP | DT_SINGLELINE,
-										0xAFFF8800); // Light violet color
+										0xAFFF8800);
 					} else if (!m3DFont) {
 						::SetBkMode(hdc, TRANSPARENT);
-						::SetTextColor(hdc, RGB(238, 130, 238)); // Light violet color
+						if (m_textShadow) {
+							::SetTextColor(hdc, RGB(0, 0, 0));
+							::TextOut(hdc, pt.x + 1, pt.y + 1, triggerName.str(), triggerName.getLength());
+						}
+						::SetTextColor(hdc, RGB(238, 130, 238));
 						::TextOut(hdc, pt.x, pt.y, triggerName.str(), triggerName.getLength());
 					}
 				}
@@ -4722,9 +4777,56 @@ void WbView3d::OnWindowLODMode3()
 	invalObjectInView(NULL);
 }
 
-void WbView3d::OnUpdateOnWindowLODMode3(CCmdUI* pCmdUI) 
+void WbView3d::OnUpdateOnWindowLODMode3(CCmdUI* pCmdUI)
 {
     pCmdUI->SetCheck(m_lod == 3);
+}
+
+void WbView3d::setMSAA(D3DMULTISAMPLE_TYPE type)
+{
+	DX8Wrapper::Set_Multi_Sample_Type(type);
+	DX8Wrapper::Reset_Device(true);
+	::AfxGetApp()->WriteProfileInt(MAIN_FRAME_SECTION, "MSAAMode", (int)type);
+}
+
+void WbView3d::OnMSAANone() { setMSAA(D3DMULTISAMPLE_NONE); }
+void WbView3d::OnMSAA2X()   { setMSAA(D3DMULTISAMPLE_2_SAMPLES); }
+void WbView3d::OnMSAA4X()   { setMSAA(D3DMULTISAMPLE_4_SAMPLES); }
+void WbView3d::OnMSAA8X()   { setMSAA(D3DMULTISAMPLE_8_SAMPLES); }
+
+void WbView3d::OnUpdateMSAANone(CCmdUI* pCmdUI) { pCmdUI->SetCheck(DX8Wrapper::Get_Multi_Sample_Type() == D3DMULTISAMPLE_NONE); }
+void WbView3d::OnUpdateMSAA2X(CCmdUI* pCmdUI)   { pCmdUI->SetCheck(DX8Wrapper::Get_Multi_Sample_Type() == D3DMULTISAMPLE_2_SAMPLES); }
+void WbView3d::OnUpdateMSAA4X(CCmdUI* pCmdUI)   { pCmdUI->SetCheck(DX8Wrapper::Get_Multi_Sample_Type() == D3DMULTISAMPLE_4_SAMPLES); }
+void WbView3d::OnUpdateMSAA8X(CCmdUI* pCmdUI)   { pCmdUI->SetCheck(DX8Wrapper::Get_Multi_Sample_Type() == D3DMULTISAMPLE_8_SAMPLES); }
+
+void WbView3d::setTextureFilter(int mode)
+{
+	if (mode == 1) {
+		TextureFilterClass::Set_Max_Anisotropy(16);
+		WW3D::Set_Texture_Filter(TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC);
+	} else {
+		TextureFilterClass::Set_Max_Anisotropy(2);
+		WW3D::Set_Texture_Filter(TextureFilterClass::TEXTURE_FILTER_BILINEAR);
+	}
+	::AfxGetApp()->WriteProfileInt(MAIN_FRAME_SECTION, "TexFilterMode", mode);
+}
+
+void WbView3d::OnTexFilterDefault()  { setTextureFilter(0); }
+void WbView3d::OnTexFilterAniso16X() { setTextureFilter(1); }
+
+void WbView3d::OnUpdateTexFilterDefault(CCmdUI* pCmdUI)  { pCmdUI->SetCheck(WW3D::Get_Texture_Filter() != TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC); }
+void WbView3d::OnUpdateTexFilterAniso16X(CCmdUI* pCmdUI) { pCmdUI->SetCheck(WW3D::Get_Texture_Filter() == TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC); }
+
+void WbView3d::OnTextShadow()
+{
+	m_textShadow = !m_textShadow;
+	::AfxGetApp()->WriteProfileInt(MAIN_FRAME_SECTION, "TextShadow", m_textShadow ? 1 : 0);
+	Invalidate();
+}
+
+void WbView3d::OnUpdateTextShadow(CCmdUI* pCmdUI)
+{
+	pCmdUI->SetCheck(m_textShadow);
 }
 
 void WbView3d::OnKillFocus(CWnd* pNewWnd)

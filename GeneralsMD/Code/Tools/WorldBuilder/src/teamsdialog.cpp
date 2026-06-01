@@ -801,7 +801,7 @@ public:
 		try {
 			m_file->Write(pData, numBytes);
 			numBytesWritten = numBytes;
-		} catch(exception)  {
+		} catch(std::exception&)  {
 			DEBUG_CRASH(("threw exception in LocalMFCFileOutputStream"));
 		}
 		return(numBytesWritten);

@@ -57,7 +57,7 @@
 #endif
 
 bool SortingRendererClass::_EnableTriangleDraw=true;
-static unsigned DEFAULT_SORTING_POLY_COUNT = 16384;	// (count * 3) must be less than 65536
+static unsigned DEFAULT_SORTING_POLY_COUNT = 21844;	// (count * 3) must be less than 65536
 static unsigned DEFAULT_SORTING_VERTEX_COUNT = 32768;	// count must be less than 65536
 
 void SortingRendererClass::SetMinVertexBufferSize( unsigned val )
