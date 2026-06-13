@@ -24,6 +24,7 @@
 #include "resource.h"
 #include "wwmath.h"
 #include "ww3d.h"
+#include "texturefilter.h"
 #include "scene.h"
 #include "rendobj.h"
 #include "camera.h"
@@ -94,6 +95,7 @@
 #include "GameClient/View.h"
 #include "GlobalLightOptions.h"
 #include "LayersList.h"
+#include "MinimapDialog.h"
 #include "ImpassableOptions.h"
 #include "GameLogic/Module/SupplyWarehouseDockUpdate.h"
 // #include "CUndoable.h"
@@ -639,6 +641,10 @@ WbView3d::WbView3d() :
 
 	
 	m_lod = ::AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "LODMode", 2);
+	m_textShadow = ::AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "TextShadow", 1) != 0;
+
+	int msaaMode = ::AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "MSAAMode", 0);
+	DX8Wrapper::Set_Multi_Sample_Type((D3DMULTISAMPLE_TYPE)msaaMode);
 
 	m_cameraOffset.x = m_cameraOffset.y = m_cameraOffset.z = 1;
 
@@ -1095,12 +1101,18 @@ void WbView3d::resetRenderObjects()
 // ----------------------------------------------------------------------------
 void WbView3d::stepTimeOfDay()
 {
-	TheWritableGlobalData->m_timeOfDay = (TimeOfDay)(TheGlobalData->m_timeOfDay+1); 
+	TheWritableGlobalData->m_timeOfDay = (TimeOfDay)(TheGlobalData->m_timeOfDay+1);
 	if (TheGlobalData->m_timeOfDay >= TIME_OF_DAY_COUNT) {
 		TheWritableGlobalData->m_timeOfDay = TIME_OF_DAY_FIRST;
 	}
 	resetRenderObjects();
 	invalObjectInView(NULL);
+
+	// Time-of-day changes the terrain tint, so the minimap needs a full resample.
+	// This is an explicit user action (like load/toggle), so rebuild immediately
+	// rather than via the throttle (which honors "Refresh Rate: Off").
+	if (TheMinimapDialog && TheMinimapDialog->IsWindowVisible())
+		TheMinimapDialog->rebuildTerrain();
 }
 
 // ----------------------------------------------------------------------------
@@ -2072,16 +2084,23 @@ void WbView3d::invalObjectInView(MapObject *pMapObjIn)
 		updateLights(); 
 	}
 	if (isScorch) {
-		updateScorches(); 
+		updateScorches();
 	}
 	Invalidate(false);
+
+	// Objects added/moved/deleted/modified all funnel through here (both the doc's
+	// invalObject path and direct p3View->invalObjectInView(NULL) callers), so this
+	// is the single place to refresh the minimap's object overlay. Pass terrainChanged
+	// = false so it re-composites the cached terrain instead of resampling (cheap).
+	if (TheMinimapDialog && TheMinimapDialog->IsWindowVisible())
+		TheMinimapDialog->requestRebuild(false);
 
 	--m_updateCount;
 }
 
 
 // ----------------------------------------------------------------------------
-void WbView3d::updateHeightMapInView(WorldHeightMap *htMap, Bool partial, const IRegion2D &partialRange) 
+void WbView3d::updateHeightMapInView(WorldHeightMap *htMap, Bool partial, const IRegion2D &partialRange)
 {
 	if (htMap == NULL) 
 		return;
@@ -2133,6 +2152,21 @@ void WbView3d::setCenterInView(Real x, Real y)
 		redraw();
 		updateHysteresis();
 		drawLabels();
+		CMainFrame::GetMainFrame()->handleCameraChange();
+	}
+}
+
+void WbView3d::setCenterInViewDeferred(Real x, Real y)
+{
+	if (x != m_centerPt.X || y != m_centerPt.Y) {
+		m_centerPt.X = x;
+		m_centerPt.Y = y;
+		constrainCenterPt();
+		updateHysteresis();
+		// Do NOT render here. Let the 3D view's own OnPaint/OnTimer loop do the
+		// D3D present on its own thread/window context. Rendering from the Minimap
+		// dialog's message handler corrupts the device and blanks the viewport.
+		Invalidate(FALSE);
 		CMainFrame::GetMainFrame()->handleCameraChange();
 	}
 }
@@ -2915,6 +2949,26 @@ BEGIN_MESSAGE_MAP(WbView3d, WbView)
 	ON_UPDATE_COMMAND_UI(ID_VIEW_GARRISONED, OnUpdateViewGarrisoned)
 	ON_COMMAND(ID_VIEW_LAYERS_LIST, OnViewLayersList)
 	ON_UPDATE_COMMAND_UI(ID_VIEW_LAYERS_LIST, OnUpdateViewLayersList)
+	ON_COMMAND(ID_VIEW_MINIMAP, OnViewMinimap)
+	ON_UPDATE_COMMAND_UI(ID_VIEW_MINIMAP, OnUpdateViewMinimap)
+	ON_COMMAND(ID_MINIMAP_SHOWOBJECTS, OnMinimapShowObjects)
+	ON_UPDATE_COMMAND_UI(ID_MINIMAP_SHOWOBJECTS, OnUpdateMinimapShowObjects)
+	ON_COMMAND(ID_MINIMAP_REFRESH_OFF, OnMinimapRefreshOff)
+	ON_COMMAND(ID_MINIMAP_REFRESH_100, OnMinimapRefresh100)
+	ON_COMMAND(ID_MINIMAP_REFRESH_250, OnMinimapRefresh250)
+	ON_COMMAND(ID_MINIMAP_REFRESH_1000, OnMinimapRefresh1000)
+	ON_UPDATE_COMMAND_UI(ID_MINIMAP_REFRESH_OFF, OnUpdateMinimapRefreshOff)
+	ON_UPDATE_COMMAND_UI(ID_MINIMAP_REFRESH_100, OnUpdateMinimapRefresh100)
+	ON_UPDATE_COMMAND_UI(ID_MINIMAP_REFRESH_250, OnUpdateMinimapRefresh250)
+	ON_UPDATE_COMMAND_UI(ID_MINIMAP_REFRESH_1000, OnUpdateMinimapRefresh1000)
+	ON_COMMAND(ID_MINIMAP_RES_128, OnMinimapRes128)
+	ON_COMMAND(ID_MINIMAP_RES_256, OnMinimapRes256)
+	ON_COMMAND(ID_MINIMAP_RES_512, OnMinimapRes512)
+	ON_COMMAND(ID_MINIMAP_RES_2048, OnMinimapRes2048)
+	ON_UPDATE_COMMAND_UI(ID_MINIMAP_RES_128, OnUpdateMinimapRes128)
+	ON_UPDATE_COMMAND_UI(ID_MINIMAP_RES_256, OnUpdateMinimapRes256)
+	ON_UPDATE_COMMAND_UI(ID_MINIMAP_RES_512, OnUpdateMinimapRes512)
+	ON_UPDATE_COMMAND_UI(ID_MINIMAP_RES_2048, OnUpdateMinimapRes2048)
 	ON_COMMAND(ID_VIEW_SHOWMAPBOUNDARIES, OnViewShowMapBoundaries)
 	ON_UPDATE_COMMAND_UI(ID_VIEW_SHOWMAPBOUNDARIES, OnUpdateViewShowMapBoundaries)
 	ON_COMMAND(ID_VIEW_RULERGRID, OnViewShowRulerGrid)
@@ -2937,6 +2991,21 @@ BEGIN_MESSAGE_MAP(WbView3d, WbView)
 	ON_UPDATE_COMMAND_UI(ID_LOD_MODE_2, OnUpdateOnWindowLODMode2)
 	ON_COMMAND(ID_LOD_MODE_3, OnWindowLODMode3)
 	ON_UPDATE_COMMAND_UI(ID_LOD_MODE_3, OnUpdateOnWindowLODMode3)
+
+	ON_COMMAND(ID_MSAA_NONE, OnMSAANone)
+	ON_UPDATE_COMMAND_UI(ID_MSAA_NONE, OnUpdateMSAANone)
+	ON_COMMAND(ID_MSAA_2X, OnMSAA2X)
+	ON_UPDATE_COMMAND_UI(ID_MSAA_2X, OnUpdateMSAA2X)
+	ON_COMMAND(ID_MSAA_4X, OnMSAA4X)
+	ON_UPDATE_COMMAND_UI(ID_MSAA_4X, OnUpdateMSAA4X)
+	ON_COMMAND(ID_MSAA_8X, OnMSAA8X)
+	ON_UPDATE_COMMAND_UI(ID_MSAA_8X, OnUpdateMSAA8X)
+	ON_COMMAND(ID_TEXFILTER_DEFAULT, OnTexFilterDefault)
+	ON_UPDATE_COMMAND_UI(ID_TEXFILTER_DEFAULT, OnUpdateTexFilterDefault)
+	ON_COMMAND(ID_TEXFILTER_ANISO16X, OnTexFilterAniso16X)
+	ON_UPDATE_COMMAND_UI(ID_TEXFILTER_ANISO16X, OnUpdateTexFilterAniso16X)
+	ON_COMMAND(ID_TEXT_SHADOW, OnTextShadow)
+	ON_UPDATE_COMMAND_UI(ID_TEXT_SHADOW, OnUpdateTextShadow)
 
 	ON_COMMAND(ID_REVALIDATE_RENDER, OnRefreshSceneObjects)
 	//}}AFX_MSG_MAP
@@ -3029,6 +3098,12 @@ void WbView3d::initWW3D()
 			
 		} else {
 			m3DFont = NULL;
+		}
+
+		int texFilterMode = ::AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "TexFilterMode", 0);
+		if (texFilterMode == 1) {
+			TextureFilterClass::Set_Max_Anisotropy(16);
+			WW3D::Set_Texture_Filter(TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC);
 		}
 
 		WW3D::Enable_Static_Sort_Lists(true);
@@ -3312,13 +3387,21 @@ void WbView3d::drawStatusLabels(CPoint basePt, int offset, const char* text, voi
 	AsciiString label = text;
 
 	if (m3DFont && !hdc) {
+		if (m_textShadow) {
+			RECT shadowRct = { labelPt.x + 2, labelPt.y + 1, labelPt.x + 2, labelPt.y + 1 };
+			((ID3DXFont*)m3DFont)->DrawText(label.str(), label.getLength(), &shadowRct,
+				DT_LEFT | DT_NOCLIP | DT_TOP | DT_SINGLELINE, 0xFF000000);
+		}
 		DWORD textColor = 0xFF000000 | (red << 16) | (green << 8) | blue;
 		RECT rct = { labelPt.x + 1, labelPt.y, labelPt.x + 1, labelPt.y };
-
 		((ID3DXFont*)m3DFont)->DrawText(label.str(), label.getLength(), &rct,
 			DT_LEFT | DT_NOCLIP | DT_TOP | DT_SINGLELINE, textColor);
 	} else if (!m3DFont) {
 		::SetBkMode(hdc, TRANSPARENT);
+		if (m_textShadow) {
+			::SetTextColor(hdc, RGB(0, 0, 0));
+			::TextOut(hdc, labelPt.x + 2, labelPt.y + 1, label.str(), label.getLength());
+		}
 		::SetTextColor(hdc, RGB(red, green, blue));
 		::TextOut(hdc, labelPt.x + 1, labelPt.y, label.str(), label.getLength());
 	}
@@ -3527,12 +3610,21 @@ void WbView3d::drawLabels(HDC hdc)
 				labelPt.y += i * 15;
 
 				if (m3DFont && !hdc) {
+					if (m_textShadow) {
+						RECT shadowRct = { labelPt.x + 2, labelPt.y + 1, labelPt.x + 2, labelPt.y + 1 };
+						m3DFont->DrawText(label.str(), label.getLength(), &shadowRct,
+							DT_LEFT | DT_NOCLIP | DT_TOP | DT_SINGLELINE, 0xFF000000);
+					}
 					DWORD textColor = 0xFF000000 | (red << 16) | (green << 8) | blue;
 					RECT rct = { labelPt.x + 1, labelPt.y, labelPt.x + 1, labelPt.y };
 					m3DFont->DrawText(label.str(), label.getLength(), &rct,
 						DT_LEFT | DT_NOCLIP | DT_TOP | DT_SINGLELINE, textColor);
 				} else if (!m3DFont) {
 					::SetBkMode(hdc, TRANSPARENT);
+					if (m_textShadow) {
+						::SetTextColor(hdc, RGB(0, 0, 0));
+						::TextOut(hdc, labelPt.x + 2, labelPt.y + 1, label.str(), label.getLength());
+					}
 					::SetTextColor(hdc, RGB(red, green, blue));
 					::TextOut(hdc, labelPt.x + 1, labelPt.y, label.str(), label.getLength());
 				}
@@ -3610,15 +3702,27 @@ void WbView3d::drawLabels(HDC hdc)
 
 					// Draw the label for each point
 					if (m3DFont && !hdc) {
+						if (m_textShadow) {
+							RECT shadowRct;
+							shadowRct.top = shadowRct.bottom = pt.y + 1;
+							shadowRct.left = shadowRct.right = pt.x + 1;
+							m3DFont->DrawText(triggerName.str(), triggerName.getLength(), &shadowRct,
+											DT_LEFT | DT_NOCLIP | DT_TOP | DT_SINGLELINE,
+											0xFF000000);
+						}
 						RECT rct;
 						rct.top = rct.bottom = pt.y;
 						rct.left = rct.right = pt.x;
-						m3DFont->DrawText(triggerName.str(), triggerName.getLength(), &rct, 
+						m3DFont->DrawText(triggerName.str(), triggerName.getLength(), &rct,
 										DT_LEFT | DT_NOCLIP | DT_TOP | DT_SINGLELINE,
-										0xAFFF8800); // Light violet color
+										0xAFFF8800);
 					} else if (!m3DFont) {
 						::SetBkMode(hdc, TRANSPARENT);
-						::SetTextColor(hdc, RGB(238, 130, 238)); // Light violet color
+						if (m_textShadow) {
+							::SetTextColor(hdc, RGB(0, 0, 0));
+							::TextOut(hdc, pt.x + 1, pt.y + 1, triggerName.str(), triggerName.getLength());
+						}
+						::SetTextColor(hdc, RGB(238, 130, 238));
 						::TextOut(hdc, pt.x, pt.y, triggerName.str(), triggerName.getLength());
 					}
 				}
@@ -4509,9 +4613,90 @@ void WbView3d::OnViewLayersList()
 	}
 }
 
-void WbView3d::OnUpdateViewLayersList(CCmdUI* pCmdUI) 
+void WbView3d::OnUpdateViewLayersList(CCmdUI* pCmdUI)
 {
 	pCmdUI->SetCheck(m_showLayersList ? 1 : 0);
+}
+
+void WbView3d::OnViewMinimap()
+{
+	if (TheMinimapDialog)
+	{
+		Bool visible = TheMinimapDialog->IsWindowVisible();
+		TheMinimapDialog->ShowWindow(visible ? SW_HIDE : SW_SHOW);
+		::AfxGetApp()->WriteProfileInt(MAIN_FRAME_SECTION, "ShowMinimap", visible ? 0 : 1);
+		if (!visible)
+			TheMinimapDialog->rebuildTerrain();
+	}
+}
+
+void WbView3d::OnUpdateViewMinimap(CCmdUI* pCmdUI)
+{
+	pCmdUI->SetCheck(TheMinimapDialog && TheMinimapDialog->IsWindowVisible() ? 1 : 0);
+}
+
+// --- Minimap submenu: Show Objects ------------------------------------------
+void WbView3d::OnMinimapShowObjects()
+{
+	if (TheMinimapDialog)
+		TheMinimapDialog->setShowObjects(!TheMinimapDialog->getShowObjects());
+}
+void WbView3d::OnUpdateMinimapShowObjects(CCmdUI* pCmdUI)
+{
+	pCmdUI->Enable(TheMinimapDialog != NULL);
+	pCmdUI->SetCheck(TheMinimapDialog && TheMinimapDialog->getShowObjects() ? 1 : 0);
+}
+
+// --- Minimap submenu: Refresh Rate (radio) ----------------------------------
+void WbView3d::OnMinimapRefreshOff()  { if (TheMinimapDialog) TheMinimapDialog->setRefreshDelayMs(0); }
+void WbView3d::OnMinimapRefresh100()  { if (TheMinimapDialog) TheMinimapDialog->setRefreshDelayMs(100); }
+void WbView3d::OnMinimapRefresh250()  { if (TheMinimapDialog) TheMinimapDialog->setRefreshDelayMs(250); }
+void WbView3d::OnMinimapRefresh1000() { if (TheMinimapDialog) TheMinimapDialog->setRefreshDelayMs(1000); }
+void WbView3d::OnUpdateMinimapRefreshOff(CCmdUI* pCmdUI)
+{
+	pCmdUI->Enable(TheMinimapDialog != NULL);
+	pCmdUI->SetCheck(TheMinimapDialog && TheMinimapDialog->getRefreshDelayMs() == 0 ? 1 : 0);
+}
+void WbView3d::OnUpdateMinimapRefresh100(CCmdUI* pCmdUI)
+{
+	pCmdUI->Enable(TheMinimapDialog != NULL);
+	pCmdUI->SetCheck(TheMinimapDialog && TheMinimapDialog->getRefreshDelayMs() == 100 ? 1 : 0);
+}
+void WbView3d::OnUpdateMinimapRefresh250(CCmdUI* pCmdUI)
+{
+	pCmdUI->Enable(TheMinimapDialog != NULL);
+	pCmdUI->SetCheck(TheMinimapDialog && TheMinimapDialog->getRefreshDelayMs() == 250 ? 1 : 0);
+}
+void WbView3d::OnUpdateMinimapRefresh1000(CCmdUI* pCmdUI)
+{
+	pCmdUI->Enable(TheMinimapDialog != NULL);
+	pCmdUI->SetCheck(TheMinimapDialog && TheMinimapDialog->getRefreshDelayMs() == 1000 ? 1 : 0);
+}
+
+// --- Minimap submenu: Resolution (radio) ------------------------------------
+void WbView3d::OnMinimapRes128()  { if (TheMinimapDialog) TheMinimapDialog->setResolution(128); }
+void WbView3d::OnMinimapRes256()  { if (TheMinimapDialog) TheMinimapDialog->setResolution(256); }
+void WbView3d::OnMinimapRes512()  { if (TheMinimapDialog) TheMinimapDialog->setResolution(512); }
+void WbView3d::OnMinimapRes2048() { if (TheMinimapDialog) TheMinimapDialog->setResolution(2048); }
+void WbView3d::OnUpdateMinimapRes128(CCmdUI* pCmdUI)
+{
+	pCmdUI->Enable(TheMinimapDialog != NULL);
+	pCmdUI->SetCheck(TheMinimapDialog && TheMinimapDialog->getResolution() == 128 ? 1 : 0);
+}
+void WbView3d::OnUpdateMinimapRes256(CCmdUI* pCmdUI)
+{
+	pCmdUI->Enable(TheMinimapDialog != NULL);
+	pCmdUI->SetCheck(TheMinimapDialog && TheMinimapDialog->getResolution() == 256 ? 1 : 0);
+}
+void WbView3d::OnUpdateMinimapRes512(CCmdUI* pCmdUI)
+{
+	pCmdUI->Enable(TheMinimapDialog != NULL);
+	pCmdUI->SetCheck(TheMinimapDialog && TheMinimapDialog->getResolution() == 512 ? 1 : 0);
+}
+void WbView3d::OnUpdateMinimapRes2048(CCmdUI* pCmdUI)
+{
+	pCmdUI->Enable(TheMinimapDialog != NULL);
+	pCmdUI->SetCheck(TheMinimapDialog && TheMinimapDialog->getResolution() == 2048 ? 1 : 0);
 }
 
 void WbView3d::OnViewShowMapBoundaries()
@@ -4722,9 +4907,56 @@ void WbView3d::OnWindowLODMode3()
 	invalObjectInView(NULL);
 }
 
-void WbView3d::OnUpdateOnWindowLODMode3(CCmdUI* pCmdUI) 
+void WbView3d::OnUpdateOnWindowLODMode3(CCmdUI* pCmdUI)
 {
     pCmdUI->SetCheck(m_lod == 3);
+}
+
+void WbView3d::setMSAA(D3DMULTISAMPLE_TYPE type)
+{
+	DX8Wrapper::Set_Multi_Sample_Type(type);
+	DX8Wrapper::Reset_Device(true);
+	::AfxGetApp()->WriteProfileInt(MAIN_FRAME_SECTION, "MSAAMode", (int)type);
+}
+
+void WbView3d::OnMSAANone() { setMSAA(D3DMULTISAMPLE_NONE); }
+void WbView3d::OnMSAA2X()   { setMSAA(D3DMULTISAMPLE_2_SAMPLES); }
+void WbView3d::OnMSAA4X()   { setMSAA(D3DMULTISAMPLE_4_SAMPLES); }
+void WbView3d::OnMSAA8X()   { setMSAA(D3DMULTISAMPLE_8_SAMPLES); }
+
+void WbView3d::OnUpdateMSAANone(CCmdUI* pCmdUI) { pCmdUI->SetCheck(DX8Wrapper::Get_Multi_Sample_Type() == D3DMULTISAMPLE_NONE); }
+void WbView3d::OnUpdateMSAA2X(CCmdUI* pCmdUI)   { pCmdUI->SetCheck(DX8Wrapper::Get_Multi_Sample_Type() == D3DMULTISAMPLE_2_SAMPLES); }
+void WbView3d::OnUpdateMSAA4X(CCmdUI* pCmdUI)   { pCmdUI->SetCheck(DX8Wrapper::Get_Multi_Sample_Type() == D3DMULTISAMPLE_4_SAMPLES); }
+void WbView3d::OnUpdateMSAA8X(CCmdUI* pCmdUI)   { pCmdUI->SetCheck(DX8Wrapper::Get_Multi_Sample_Type() == D3DMULTISAMPLE_8_SAMPLES); }
+
+void WbView3d::setTextureFilter(int mode)
+{
+	if (mode == 1) {
+		TextureFilterClass::Set_Max_Anisotropy(16);
+		WW3D::Set_Texture_Filter(TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC);
+	} else {
+		TextureFilterClass::Set_Max_Anisotropy(2);
+		WW3D::Set_Texture_Filter(TextureFilterClass::TEXTURE_FILTER_BILINEAR);
+	}
+	::AfxGetApp()->WriteProfileInt(MAIN_FRAME_SECTION, "TexFilterMode", mode);
+}
+
+void WbView3d::OnTexFilterDefault()  { setTextureFilter(0); }
+void WbView3d::OnTexFilterAniso16X() { setTextureFilter(1); }
+
+void WbView3d::OnUpdateTexFilterDefault(CCmdUI* pCmdUI)  { pCmdUI->SetCheck(WW3D::Get_Texture_Filter() != TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC); }
+void WbView3d::OnUpdateTexFilterAniso16X(CCmdUI* pCmdUI) { pCmdUI->SetCheck(WW3D::Get_Texture_Filter() == TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC); }
+
+void WbView3d::OnTextShadow()
+{
+	m_textShadow = !m_textShadow;
+	::AfxGetApp()->WriteProfileInt(MAIN_FRAME_SECTION, "TextShadow", m_textShadow ? 1 : 0);
+	Invalidate();
+}
+
+void WbView3d::OnUpdateTextShadow(CCmdUI* pCmdUI)
+{
+	pCmdUI->SetCheck(m_textShadow);
 }
 
 void WbView3d::OnKillFocus(CWnd* pNewWnd)

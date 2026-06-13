@@ -150,6 +150,26 @@ protected:
 	afx_msg void OnUpdateShowLetterbox(CCmdUI* pCmdUI);
 	afx_msg void OnViewLayersList();
 	afx_msg void OnUpdateViewLayersList(CCmdUI* pCmdUI);
+	afx_msg void OnViewMinimap();
+	afx_msg void OnUpdateViewMinimap(CCmdUI* pCmdUI);
+	afx_msg void OnMinimapShowObjects();
+	afx_msg void OnUpdateMinimapShowObjects(CCmdUI* pCmdUI);
+	afx_msg void OnMinimapRefreshOff();
+	afx_msg void OnMinimapRefresh100();
+	afx_msg void OnMinimapRefresh250();
+	afx_msg void OnMinimapRefresh1000();
+	afx_msg void OnUpdateMinimapRefreshOff(CCmdUI* pCmdUI);
+	afx_msg void OnUpdateMinimapRefresh100(CCmdUI* pCmdUI);
+	afx_msg void OnUpdateMinimapRefresh250(CCmdUI* pCmdUI);
+	afx_msg void OnUpdateMinimapRefresh1000(CCmdUI* pCmdUI);
+	afx_msg void OnMinimapRes128();
+	afx_msg void OnMinimapRes256();
+	afx_msg void OnMinimapRes512();
+	afx_msg void OnMinimapRes2048();
+	afx_msg void OnUpdateMinimapRes128(CCmdUI* pCmdUI);
+	afx_msg void OnUpdateMinimapRes256(CCmdUI* pCmdUI);
+	afx_msg void OnUpdateMinimapRes512(CCmdUI* pCmdUI);
+	afx_msg void OnUpdateMinimapRes2048(CCmdUI* pCmdUI);
 	afx_msg void OnViewGarrisoned();
 	afx_msg void OnUpdateViewGarrisoned(CCmdUI* pCmdUI);
 	afx_msg void OnViewShowMapBoundaries();
@@ -168,6 +188,20 @@ protected:
 	afx_msg void OnUpdateOnWindowLODMode2(CCmdUI* pCmdUI);
 	afx_msg void OnWindowLODMode3();
 	afx_msg void OnUpdateOnWindowLODMode3(CCmdUI* pCmdUI);
+	afx_msg void OnMSAANone();
+	afx_msg void OnMSAA2X();
+	afx_msg void OnMSAA4X();
+	afx_msg void OnMSAA8X();
+	afx_msg void OnUpdateMSAANone(CCmdUI* pCmdUI);
+	afx_msg void OnUpdateMSAA2X(CCmdUI* pCmdUI);
+	afx_msg void OnUpdateMSAA4X(CCmdUI* pCmdUI);
+	afx_msg void OnUpdateMSAA8X(CCmdUI* pCmdUI);
+	afx_msg void OnTexFilterDefault();
+	afx_msg void OnTexFilterAniso16X();
+	afx_msg void OnUpdateTexFilterDefault(CCmdUI* pCmdUI);
+	afx_msg void OnUpdateTexFilterAniso16X(CCmdUI* pCmdUI);
+	afx_msg void OnTextShadow();
+	afx_msg void OnUpdateTextShadow(CCmdUI* pCmdUI);
 	afx_msg void OnViewShowSubDraw();
 	afx_msg void OnUpdateViewShowSubDraw(CCmdUI* pCmdUI);
 	afx_msg void OnViewShowBaseRadius();
@@ -245,6 +279,9 @@ private:
 
 	Bool m_showBuildZoneFeedback;
 	Int m_lod;
+	Bool m_textShadow;
+	void setMSAA(D3DMULTISAMPLE_TYPE type);
+	void setTextureFilter(int mode);
 
 
 	ID3DXFont*							m3DFont;
@@ -351,6 +388,12 @@ public:
 	void redraw();
 
 	virtual void setCenterInView(Real x, Real y);
+
+	// Like setCenterInView, but does NOT render synchronously. Updates the camera
+	// center and invalidates the view so its own paint loop renders. Safe to call
+	// from another window's message handler (e.g. the Minimap dialog) without
+	// driving the D3D device from a foreign context.
+	void setCenterInViewDeferred(Real x, Real y);
 
 	Bool getShowTerrain();
 	Bool getShowWireframe();

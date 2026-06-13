@@ -162,8 +162,8 @@ protected:
 	static Bool ParseTeamsDataChunk(DataChunkInput &file, DataChunkInfo *info, void *userData);
 	static Bool ParsePlayersDataChunk(DataChunkInput &file, DataChunkInfo *info, void *userData);
 
-	AsciiString ScriptDialog::incrementStringNumber(const AsciiString& input);
-	void ScriptDialog::applySmartCopyIncrement(Script* pScr);
+	AsciiString incrementStringNumber(const AsciiString& input);
+	void applySmartCopyIncrement(Script* pScr);
 
 	virtual BOOL PreTranslateMessage(MSG* pMsg);
 

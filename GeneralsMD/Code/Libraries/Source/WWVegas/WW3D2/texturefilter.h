@@ -121,7 +121,11 @@ public:
 	static void _Set_Default_Mag_Filter(FilterType filter);
 	static void _Set_Default_Mip_Filter(FilterType filter);
 
+	static void Set_Max_Anisotropy(int level) { s_MaxAnisotropy = level; }
+	static int Get_Max_Anisotropy() { return s_MaxAnisotropy; }
+
 private:
+	static int s_MaxAnisotropy;
 	// State not contained in the Direct3D texture object:
 	FilterType TextureMinFilter;
 	FilterType TextureMagFilter;
