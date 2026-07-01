@@ -376,14 +376,14 @@ BEGIN
     POPUP "Text Rendering"
     BEGIN
         MENUITEM "Shadow",                      ID_TEXT_SHADOW
-        MENUITEM "Grayscale",                   ID_TEXT_ANTIALIAS
-        MENUITEM SEPARATOR
-        MENUITEM "Label Anchor: Default",       ID_TEXT_ANCHOR_DEFAULT
-        MENUITEM "Label Anchor: New",           ID_TEXT_ANCHOR_NEW
-        MENUITEM SEPARATOR
-        MENUITEM "Label Renderer: Old (D3DX)",  ID_TEXT_RENDERER_OLD
-        MENUITEM "Label Renderer: New (GDI)",   ID_TEXT_RENDERER_NEW
-        MENUITEM "Label Renderer: Atlas (Batched, Fast)", ID_TEXT_RENDERER_ATLAS
+        // MENUITEM "Grayscale",                   ID_TEXT_ANTIALIAS
+        // MENUITEM SEPARATOR
+        // MENUITEM "Label Anchor: Default",       ID_TEXT_ANCHOR_DEFAULT
+        // MENUITEM "Label Anchor: New",           ID_TEXT_ANCHOR_NEW
+        // MENUITEM SEPARATOR
+        // MENUITEM "Label Renderer: Old (D3DX)",  ID_TEXT_RENDERER_OLD
+        // MENUITEM "Label Renderer: New (GDI)",   ID_TEXT_RENDERER_NEW
+        // MENUITEM "Label Renderer: Atlas (Batched, Fast)", ID_TEXT_RENDERER_ATLAS
     END
     POPUP "&Window"
     BEGIN
