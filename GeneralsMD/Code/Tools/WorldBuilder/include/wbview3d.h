@@ -106,6 +106,10 @@ protected:
 	afx_msg void OnShowWindow(BOOL bShow, UINT nStatus);
 	afx_msg void OnViewShowwireframe();
 	afx_msg void OnUpdateViewShowwireframe(CCmdUI* pCmdUI);
+	afx_msg void OnViewShowfullwireframe();
+	afx_msg void OnUpdateViewShowfullwireframe(CCmdUI* pCmdUI);
+	afx_msg void OnViewShowselectionoverlay();
+	afx_msg void OnUpdateViewShowselectionoverlay(CCmdUI* pCmdUI);
 	afx_msg BOOL OnEraseBkgnd(CDC* pDC);
 	afx_msg void OnViewShowentire3dmap();
 	afx_msg void OnUpdateViewShowentire3dmap(CCmdUI* pCmdUI);
@@ -174,6 +178,8 @@ protected:
 	afx_msg void OnUpdateViewGarrisoned(CCmdUI* pCmdUI);
 	afx_msg void OnViewShowMapBoundaries();
 	afx_msg void OnUpdateViewShowMapBoundaries(CCmdUI* pCmdUI);
+	afx_msg void OnViewShowWaveLines();
+	afx_msg void OnUpdateViewShowWaveLines(CCmdUI* pCmdUI);
 	afx_msg void OnViewShowRulerGrid();
 	afx_msg void OnUpdateViewShowRulerGrid(CCmdUI* pCmdUI);
 	afx_msg void OnViewShowTracingOverlay();
@@ -240,6 +246,8 @@ private:
 	Real										m_actualHeightAboveGround;	// for camera tool display only
 	Vector3									m_cameraSource;							// for camera tool display only
 	Vector3									m_cameraTarget;							// for camera tool display only
+	Real										m_cameraGroundZ;						// terrain height (world Z) under the camera center; for the minimap view-box projection
+	Real										m_cameraBorderWorld;					// border size * MAP_XY_FACTOR; subtracted to put frustum corners in border-relative (object) world
 	Int											m_time;
 	Int											m_updateCount;
 	UINT										m_timer;
@@ -249,6 +257,8 @@ private:
 	LayerClass							*m_buildLayer;
 	IntersectionClass				*m_intersector;
 	Bool										m_showWireframe;
+	Bool										m_showFullWireframe;	///< true => render whole scene in LINE mode (no solid pass)
+	Bool										m_showSelectionOverlay;	///< true => tint selected objects with a highlight color
 	Bool										m_ww3dInited;
 	Bool										m_needToLoadRoads;
 	LightClass							*m_globalLight[MAX_GLOBAL_LIGHTS];
@@ -265,6 +275,7 @@ private:
 	Bool										m_firstPaint;  ///< True if we haven't painted yet.
 	Bool										m_showLayersList;	///< Flag whether the layers list is visible or not.
 	Bool										m_showMapBoundaries;	///< Flag whether to show all the map boundaries or not
+	Bool										m_showWaveLines;	///< Flag whether to draw wave start->end overlay lines
 	Bool										m_showAmbientSounds;	///< Flag whether to show all the ambient sounds or not
   Bool										m_showSoundCircles;	///< Flag whether to show the minimum and maximum radii of the ambient sounds attached to the selected object
 	Bool										m_showBoundingBoxes;
@@ -318,6 +329,11 @@ protected:
 
 public:
 
+	/// In-memory copy of the View > Show Object Selection Overlay toggle (authoritative;
+	/// the menu handler keeps it and the registry in sync). Lets the click path test the
+	/// overlay state without an uncached GetProfileInt registry read per click.
+	Bool getShowSelectionOverlay() const { return m_showSelectionOverlay; }
+
 	void startEditTimer();
 	void pauseEditTimer();
 	void resetEditTimer();
@@ -360,6 +376,11 @@ public:
 	Real getCameraAngle(void) { return m_cameraAngle; }
 	CPoint getActualWinSize(void) {return m_actualWinSize;}
 
+	/// Fill corners[4] with the world-space ground-plane points of the view frustum
+	/// (the 4 viewport corners cast to the ground), for drawing a minimap view box.
+	/// Order: top-left, top-right, bottom-right, bottom-left. Returns false if no camera.
+	Bool getViewFrustumGroundCorners(Coord3D corners[4]);
+
 	Real getLastTrackingZ(void) { return m_lastTrackingZ; }
 	Bool getLastTrackingZIsFromHighElev(void) { return m_lastTrackingZIsFromHighElev; }
 	virtual MapObject *picked3dObjectInView(CPoint viewPt);
@@ -397,6 +418,11 @@ public:
 
 	Bool getShowTerrain();
 	Bool getShowWireframe();
+
+	// Wave-line overlay toggle, shared by the View menu and the Wave Editor panel
+	// checkbox so the two stay in sync (flag + registry + DrawObject + redraw).
+	Bool getShowWaveLines(void) { return m_showWaveLines; }
+	void setShowWaveLines(Bool show);
 
 	// void setShowBuildZoneFeedBack(Bool toggle) {m_showBuildZoneFeedback = toggle;}
 	Bool getShowBuildZoneFeedBack(void) { return ::AfxGetApp()->GetProfileInt(OBJECT_OPTION_PANEL, "PreviewBuildZone", 1);}

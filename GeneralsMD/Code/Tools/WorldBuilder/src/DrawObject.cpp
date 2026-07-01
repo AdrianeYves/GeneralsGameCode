@@ -39,6 +39,8 @@
 #include "W3DDevice/GameClient/HeightMap.h"
 #include "W3DDevice/GameClient/W3DAssetManager.h"
 #include "W3DDevice/GameClient/W3DWater.h"
+#include "W3DDevice/GameClient/W3DWaterTracks.h"
+#include "WaveEditorTool.h"
 #include "WW3D2/dx8wrapper.h"
 #include "WW3D2/mesh.h"
 #include "WW3D2/meshmdl.h"
@@ -62,6 +64,7 @@
 #include "render2d.h"
 #include "GameLogic/Weapon.h"
 #include "Common/AudioEventInfo.h"
+#include <d3dx8tex.h>		// D3DXCreateTextureFromFileExA, for PNG tracing overlays
 
 #ifdef _DEBUG
 #define NO_INTENSE_DEBUG 1
@@ -115,8 +118,15 @@ Bool	DrawObject::m_disableFeedback = false;
 Bool	DrawObject::m_meshFeedback = false;
 Bool	DrawObject::m_rampFeedback = false;
 Bool	DrawObject::m_boundaryFeedback = false;
+Bool	DrawObject::m_waveFeedback = true;	///< wave overlay lines on by default
+Bool	DrawObject::m_showShoreline = true;	///< red water/land boundary on by default (wave editor aid)
+Bool	DrawObject::m_shorelineDirty = true;	///< force a rebuild of the cached shoreline on first draw
+Int		DrawObject::m_shorelineSegCount = 0;
+float	*DrawObject::m_shorelineSeg = NULL;
 Bool	DrawObject::m_rulerGridFeedback = true;
 Bool	DrawObject::m_showTracingOverlay = false;
+Int		DrawObject::m_tracingOverlayOpacity = 255;	///< fully opaque by default
+Int		DrawObject::m_tracingOverlayFilter = 0;			///< 0 = default (linear)
 Bool	DrawObject::m_ambientSoundFeedback = false;
 Bool	DrawObject::m_baseRadiusFeedback = false;
 Bool	DrawObject::m_forceDrawArrow = false;
@@ -154,6 +164,81 @@ void DrawObject::stopWaypointDragFeedback()
 	m_dragWaypointFeedback = false;
 }
 
+// The tracing overlay is per-map. Its base name (no extension) is
+// "data\editor\<mapname>", where <mapname> is the loaded map's filename with
+// its directory and .map extension stripped. When no map is loaded/saved yet
+// (no path available) we fall back to the legacy "trace_overlay" name so the
+// feature still works on unsaved maps.
+AsciiString DrawObject::getTracingOverlayBaseName(void)
+{
+	const char *mapName = "trace_overlay";
+
+	CWorldBuilderDoc *pDoc = CWorldBuilderDoc::GetActiveDoc();
+	CString mapPath = pDoc ? pDoc->getMapPath() : CString("");
+
+	// Pull just the filename out of the full path, then drop the extension.
+	char fname[_MAX_FNAME] = "";
+	if (!mapPath.IsEmpty()) {
+		_splitpath((const char *)mapPath, NULL, NULL, fname, NULL);
+	}
+	if (fname[0] != '\0') {
+		mapName = fname;
+	}
+
+	AsciiString base = "data\\editor\\";
+	base.concat(mapName);
+	return base;
+}
+
+// Round an integer up to the next power of two (1 stays 1, 192 -> 256, etc).
+static Int roundUpToPow2(Int v)
+{
+	if (v < 1) return 1;
+	Int p = 1;
+	while (p < v) p <<= 1;
+	return p;
+}
+
+// Recommended overlay texture size for the current map. PNG accepts any size so
+// it gets the exact cell extents; DDS requires power-of-two so it gets those
+// extents rounded up. Returns false when no map is loaded.
+Bool DrawObject::getTracingOverlayRecommendedSize(Int &outPngW, Int &outPngH,
+																									Int &outDdsW, Int &outDdsH)
+{
+	CWorldBuilderDoc *pDoc = CWorldBuilderDoc::GetActiveDoc();
+	WorldHeightMapEdit *pMap = pDoc ? pDoc->GetHeightMap() : NULL;
+	if (pMap == NULL) {
+		return false;
+	}
+	outPngW = pMap->getXExtent();
+	outPngH = pMap->getYExtent();
+	outDdsW = roundUpToPow2(outPngW);
+	outDdsH = roundUpToPow2(outPngH);
+	return true;
+}
+
+// Returns the path to the overlay file that actually exists on disk, preferring
+// the .png over the .dds. Returns an empty string if neither is present.
+AsciiString DrawObject::resolveTracingOverlayPath(void)
+{
+	AsciiString base = getTracingOverlayBaseName();
+
+	AsciiString pngPath = base;
+	pngPath.concat(".png");
+	CFileFind finder;
+	if (finder.FindFile(pngPath.str())) {
+		return pngPath;
+	}
+
+	AsciiString ddsPath = base;
+	ddsPath.concat(".dds");
+	if (finder.FindFile(ddsPath.str())) {
+		return ddsPath;
+	}
+
+	return AsciiString::TheEmptyString;
+}
+
 
 
 DrawObject::~DrawObject(void)
@@ -176,6 +261,8 @@ DrawObject::DrawObject(void) :
 	m_indexWater(NULL),
 	m_moldMesh(NULL),
 	m_lineRenderer(NULL),
+	m_tracingOverlayTexture(NULL),
+	m_tracingOverlayLoadedFilter(-1),
   m_drawSoundRanges(false)
 {
 	// m_roadIconColor     = 0xFFFF00; // yellow
@@ -256,8 +343,10 @@ Int DrawObject::freeMapResources(void)
 	REF_PTR_RELEASE(m_vertexMaterialClass);
 	REF_PTR_RELEASE(m_vertexFeedback);
 	REF_PTR_RELEASE(m_indexFeedback);	
-	REF_PTR_RELEASE(m_indexWater);	
+	REF_PTR_RELEASE(m_indexWater);
 	REF_PTR_RELEASE(m_moldMesh);
+	REF_PTR_RELEASE(m_tracingOverlayTexture);
+	m_tracingOverlayLoadedPath.clear();
 	if (m_lineRenderer) {
 		delete m_lineRenderer;
 		m_lineRenderer = NULL;
@@ -728,6 +817,358 @@ void DrawObject::updateBoundaryVB(void)
 		// Optional: You can still draw the handles ("little nuggets") here if needed,
 		// but now the edges follow terrain better.
 
+	}
+}
+
+//-----------------------------------------------------------------------------
+// DrawObject::updateWaveVB
+//-----------------------------------------------------------------------------
+/** Build terrain-following overlay lines for every wave in the water-track
+	system: a start->end segment plus an arrowhead at the end showing travel
+	direction.  Same VB/IB + per-segment height sampling as updateBoundaryVB so
+	the lines hug the terrain/water and render inside the D3D frame. */
+//-----------------------------------------------------------------------------
+void DrawObject::updateWaveVB(void)
+{
+	m_feedbackVertexCount = 0;
+	m_feedbackIndexCount = 0;
+
+	if (!TheWaterTracksRenderSystem || !TheTerrainRenderObject)
+		return;
+
+	const DWORD WAVE_COLOR     = 0xFF00C8FF;	// ARGB cyan (normal)
+	const DWORD WAVE_COLOR_SEL = 0xFFFFFF00;	// ARGB yellow (selected)
+	const DWORD WAVE_COLOR_GHOST = 0xFFA0F0FF;	// ARGB light cyan (drag preview)
+	const float stepSize = 10.0f * MAP_XY_FACTOR;
+
+	// Append a ghost-preview wave (the one being dragged out) after the committed
+	// waves so it draws with the same crest-bar + arrow glyph in light cyan.
+	float ghCx, ghCy, ghDx, ghDy; Int ghType;
+	const Bool haveGhost = WaveEditorTool::getGhostWave(ghCx, ghCy, ghDx, ghDy, ghType);
+
+	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexFeedback, D3DLOCK_DISCARD);
+	UnsignedShort *curIb = lockIdxBuffer.Get_Index_Array();
+
+	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexFeedback, D3DLOCK_DISCARD);
+	VertexFormatXYZDUV1 *curVb = (VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
+
+	// Emit a terrain-following thick line from a->b as two triangles per segment.
+	#define WAVE_SAMPLE_Z(PT) \
+		PT.z = TheTerrainRenderObject->getHeightMapHeight(PT.x, PT.y, NULL); \
+		if (m_showWater) { Real wh = getWaterHeightIfUnderwater(PT.x, PT.y); if (wh != -FLT_MAX) PT.z = wh + 4.5f; }
+
+	DWORD waveColor = WAVE_COLOR;	// set per wave below
+
+	#define WAVE_ADD_VERT(px, py, pz) \
+		curVb->x = px; curVb->y = py; curVb->z = pz; \
+		curVb->u1 = 0; curVb->v1 = 0; curVb->diffuse = waveColor; ++curVb; ++m_feedbackVertexCount;
+
+	Int waveCount = TheWaterTracksRenderSystem->getWaveCount();
+	Int totalGlyphs = waveCount + (haveGhost ? 1 : 0);
+	for (Int w = 0; w < totalGlyphs; ++w)
+	{
+		// p0->p1 is the visible wave front (perpendicular to motion, m_finalWidth
+		// wide); 'tip' is a point off the front's center in the travel direction.
+		Vector2 p0, p1, tip;
+		const Bool isGhost = (w >= waveCount);
+		if (isGhost)
+		{
+			// Same front-line math as a committed wave, for the dragged direction.
+			TheWaterTracksRenderSystem->getWaveFrontLineForType(
+				Vector2(ghCx, ghCy), Vector2(ghDx, ghDy), ghType, p0, p1, tip);
+		}
+		else if (!TheWaterTracksRenderSystem->getWaveFrontLine(w, p0, p1, tip))
+			continue;
+
+		waveColor = isGhost ? WAVE_COLOR_GHOST
+											: (WaveEditorTool::isWaveSelected(w) ? WAVE_COLOR_SEL : WAVE_COLOR);
+
+		Vector2 center((p0.X + p1.X) * 0.5f, (p0.Y + p1.Y) * 0.5f);
+
+		// Pieces to draw: the front bar (p0->p1), a stem (center->tip) showing the
+		// travel direction, and two arrowhead barbs at the tip.
+		Coord3D pieces[4][2];
+		Int numPieces = 2;
+		pieces[0][0].x = p0.X;     pieces[0][0].y = p0.Y;
+		pieces[0][1].x = p1.X;     pieces[0][1].y = p1.Y;
+		pieces[1][0].x = center.X; pieces[1][0].y = center.Y;
+		pieces[1][1].x = tip.X;    pieces[1][1].y = tip.Y;
+
+		Vector2 dirv = tip - center;
+		Real dlen = dirv.Length();
+		if (dlen > 1.0f)
+		{
+			dirv *= (1.0f / dlen);
+			Vector2 perp(-dirv.Y, dirv.X);
+			Real ah = 6.0f * MAP_XY_FACTOR;	// arrowhead length
+			Real aw = 3.0f * MAP_XY_FACTOR;	// arrowhead half-width
+			Vector2 base = tip - dirv * ah;
+			Vector2 b1 = base + perp * aw;
+			Vector2 b2 = base - perp * aw;
+			pieces[2][0].x = tip.X; pieces[2][0].y = tip.Y;
+			pieces[2][1].x = b1.X;  pieces[2][1].y = b1.Y;
+			pieces[3][0].x = tip.X; pieces[3][0].y = tip.Y;
+			pieces[3][1].x = b2.X;  pieces[3][1].y = b2.Y;
+			numPieces = 4;
+		}
+
+		for (Int pc = 0; pc < numPieces; ++pc)
+		{
+			Coord3D a = pieces[pc][0];
+			Coord3D b = pieces[pc][1];
+			Vector3 edgeVec(b.x - a.x, b.y - a.y, 0);
+			Real edgeLength = sqrtf(edgeVec.X*edgeVec.X + edgeVec.Y*edgeVec.Y);
+			Int segments = max(1, (int)(edgeLength / stepSize));
+
+			for (Int s = 0; s < segments; ++s)
+			{
+				Real t1 = (Real)s / segments;
+				Real t2 = (Real)(s + 1) / segments;
+				Coord3D p1, p2;
+				p1.x = a.x + (b.x - a.x) * t1; p1.y = a.y + (b.y - a.y) * t1;
+				p2.x = a.x + (b.x - a.x) * t2; p2.y = a.y + (b.y - a.y) * t2;
+				WAVE_SAMPLE_Z(p1);
+				WAVE_SAMPLE_Z(p2);
+
+				Vector3 dir(p2.x - p1.x, p2.y - p1.y, p2.z - p1.z);
+				dir.Normalize();
+				dir *= 1.0f;	// half-width: total wave line width = 2 world units (thin)
+				dir.Rotate_Z(PI / 2);
+
+				if (m_feedbackVertexCount + 4 > NUM_FEEDBACK_VERTEX || m_feedbackIndexCount + 6 > NUM_FEEDBACK_INDEX)
+					return;
+
+				WAVE_ADD_VERT(p1.x + dir.X, p1.y + dir.Y, p1.z);
+				WAVE_ADD_VERT(p1.x - dir.X, p1.y - dir.Y, p1.z);
+				WAVE_ADD_VERT(p2.x + dir.X, p2.y + dir.Y, p2.z);
+				WAVE_ADD_VERT(p2.x - dir.X, p2.y - dir.Y, p2.z);
+
+				*curIb++ = m_feedbackVertexCount - 4;
+				*curIb++ = m_feedbackVertexCount - 2;
+				*curIb++ = m_feedbackVertexCount - 3;
+				*curIb++ = m_feedbackVertexCount - 4;
+				*curIb++ = m_feedbackVertexCount - 1;
+				*curIb++ = m_feedbackVertexCount - 2;
+				m_feedbackIndexCount += 6;
+			}
+		}
+	}
+
+	#undef WAVE_SAMPLE_Z
+	#undef WAVE_ADD_VERT
+}
+
+//-----------------------------------------------------------------------------
+// DrawObject::updateShorelineVB
+//-----------------------------------------------------------------------------
+/** Build a red overlay line tracing the water/land boundary, as an aid for the wave
+	editor (waves are painted along the shore).  We sample the heightmap on a regular
+	grid, classify each sample as underwater or not, and for every grid cell that
+	straddles the boundary we emit a short red segment where water meets land (a light
+	"marching squares": a segment per crossed pair of cell edges).  The verts sit at the
+	water surface height so the line hugs the shoreline. */
+//-----------------------------------------------------------------------------
+// Z_LIFT and HALF_W are shared by the cache scan and the per-frame expand.
+static const float SHORE_Z_LIFT = 4.5f;		// sit just above the water surface
+static const float SHORE_HALF_W = 1.0f;		// half line thickness (total 2 world units)
+
+//-----------------------------------------------------------------------------
+// DrawObject::rebuildShorelineCache
+//-----------------------------------------------------------------------------
+/** Run the (expensive) marching-squares scan over the whole heightmap once and store
+	the resulting boundary segments in m_shorelineSeg.  Called only when the cache is
+	dirty (toggle on / explicit invalidate); updateShorelineVB() then just re-expands
+	these cached segments into the shared VB each frame, which is cheap. */
+//-----------------------------------------------------------------------------
+void DrawObject::rebuildShorelineCache(void)
+{
+	m_shorelineDirty = false;
+	m_shorelineSegCount = 0;
+
+	if (!TheTerrainRenderObject)
+		return;
+
+	CWorldBuilderDoc *pDoc = CWorldBuilderDoc::GetActiveDoc();
+	if (!pDoc)
+		return;
+	WorldHeightMapEdit *pMap = pDoc->GetHeightMap();
+	if (!pMap)
+		return;
+
+	if (!m_shorelineSeg)
+	{
+		m_shorelineSeg = new float[SHORELINE_SEG_MAX * 5];
+		if (!m_shorelineSeg)
+			return;
+	}
+
+	// One sample per heightmap cell.  MAP_XY_FACTOR world units per cell.
+	const float worldX0 = ADJUST_FROM_INDEX_TO_REAL(1);
+	const float worldY0 = ADJUST_FROM_INDEX_TO_REAL(1);
+	const float worldX1 = ADJUST_FROM_INDEX_TO_REAL(pMap->getXExtent() - 2);
+	const float worldY1 = ADJUST_FROM_INDEX_TO_REAL(pMap->getYExtent() - 2);
+	const float step    = MAP_XY_FACTOR;
+
+	// underwater test at a world point: true if the cell is under a water area.
+	#define SHORE_WET(X, Y) (getWaterHeightIfUnderwater((X), (Y)) != -FLT_MAX)
+
+	// Store one boundary segment a->b at water height, clipped to capacity.
+	#define SHORE_STORE_SEG(ax, ay, bx, by, wz) \
+	{ \
+		if (m_shorelineSegCount < SHORELINE_SEG_MAX) { \
+			float *_s = &m_shorelineSeg[m_shorelineSegCount * 5]; \
+			_s[0]=(ax); _s[1]=(ay); _s[2]=(bx); _s[3]=(by); _s[4]=(wz); \
+			++m_shorelineSegCount; \
+		} \
+	}
+
+	// Count the x sample points (cell corners at x and x+step for every cell).
+	Int nPts = 1;
+	for (float cx = worldX0; cx < worldX1; cx += step)
+		++nPts;
+
+	// Each grid point is shared by up to 4 cells; classify every point ONCE per row
+	// pair instead of 4 times per cell -- the wet test (a point-in-water-polygon
+	// lookup) dominates the scan, so this cuts the rebuild cost ~4x.
+	unsigned char *rowLo = new unsigned char[nPts];	// wetness of row y
+	unsigned char *rowHi = new unsigned char[nPts];	// wetness of row y+step
+	if (!rowLo || !rowHi)
+	{
+		delete [] rowLo;
+		delete [] rowHi;
+		return;
+	}
+
+	Int i;
+	for (i = 0; i < nPts; ++i)
+		rowLo[i] = SHORE_WET(worldX0 + i * step, worldY0) ? 1 : 0;
+
+	for (float y = worldY0; y < worldY1; y += step)
+	{
+		float yn = y + step;
+		for (i = 0; i < nPts; ++i)
+			rowHi[i] = SHORE_WET(worldX0 + i * step, yn) ? 1 : 0;
+
+		Int ix = 0;
+		for (float x = worldX0; x < worldX1; x += step, ++ix)
+		{
+			float xn = x + step;
+
+			// The cell's four corners (water = 1, land = 0), from the cached rows.
+			Bool w00 = rowLo[ix]     != 0;	// bottom-left
+			Bool w10 = rowLo[ix + 1] != 0;	// bottom-right
+			Bool w01 = rowHi[ix]     != 0;	// top-left
+			Bool w11 = rowHi[ix + 1] != 0;	// top-right
+
+			// Fully wet or fully dry -> no boundary in this cell.
+			Int wet = (w00?1:0) + (w10?1:0) + (w01?1:0) + (w11?1:0);
+			if (wet == 0 || wet == 4)
+				continue;
+
+			// Boundary crosses an edge wherever its two endpoints differ.  Take the
+			// midpoint of each crossed edge and connect them; for a single corner in/out
+			// that's one segment, for a split (two corners) it's two.  Keeping it to edge
+			// midpoints (no sub-cell interpolation) is plenty for an editor guide.
+			float mx = (x + xn) * 0.5f, my = (y + yn) * 0.5f;
+			float cpx[4]; float cpy[4]; Int nC = 0;
+			if (w00 != w10) { cpx[nC]=mx; cpy[nC]=y;  ++nC; }	// bottom edge
+			if (w01 != w11) { cpx[nC]=mx; cpy[nC]=yn; ++nC; }	// top edge
+			if (w00 != w01) { cpx[nC]=x;  cpy[nC]=my; ++nC; }	// left edge
+			if (w10 != w11) { cpx[nC]=xn; cpy[nC]=my; ++nC; }	// right edge
+
+			// Water surface height for the lift (use the cell center's water level).
+			float wz = getWaterHeightIfUnderwater(mx, my);
+			if (wz == -FLT_MAX)
+			{
+				// Center happens to be dry; borrow a wet corner's water level.
+				if      (w00) wz = getWaterHeightIfUnderwater(x,  y );
+				else if (w10) wz = getWaterHeightIfUnderwater(xn, y );
+				else if (w01) wz = getWaterHeightIfUnderwater(x,  yn);
+				else          wz = getWaterHeightIfUnderwater(xn, yn);
+			}
+			if (wz == -FLT_MAX)
+				continue;	// shouldn't happen given wet>0, but be safe
+			wz += SHORE_Z_LIFT;
+
+			if (nC >= 2)
+				SHORE_STORE_SEG(cpx[0], cpy[0], cpx[1], cpy[1], wz);
+			if (nC >= 4)	// saddle: two separate crossings
+				SHORE_STORE_SEG(cpx[2], cpy[2], cpx[3], cpy[3], wz);
+		}
+
+		// This row's top edge is the next row's bottom edge.
+		unsigned char *tmpRow = rowLo; rowLo = rowHi; rowHi = tmpRow;
+	}
+
+	delete [] rowLo;
+	delete [] rowHi;
+
+	#undef SHORE_WET
+	#undef SHORE_STORE_SEG
+}
+
+//-----------------------------------------------------------------------------
+// DrawObject::getShorelineForFill
+//-----------------------------------------------------------------------------
+/** Hand the cached water/land boundary to the wave bucket-fill.  Rebuilds the cache
+	if it is dirty or has never been built, so the caller always gets current data
+	(the user may have edited terrain/water since the red guide was last drawn). */
+//-----------------------------------------------------------------------------
+Int DrawObject::getShorelineForFill(const float **outSegs)
+{
+	if (m_shorelineDirty || m_shorelineSegCount == 0)
+		rebuildShorelineCache();
+	if (outSegs)
+		*outSegs = m_shorelineSeg;
+	return m_shorelineSegCount;
+}
+
+void DrawObject::updateShorelineVB(void)
+{
+	m_feedbackVertexCount = 0;
+	m_feedbackIndexCount = 0;
+
+	// Rescan the heightmap only when the cache is explicitly dirty. Terrain and water
+	// can't change while the wave editor is the selected tool (tools are exclusive), so
+	// the rescan triggers are all event-driven: tool activate, the Show-shoreline toggle,
+	// a bucket stroke, and heightmap reloads (updateHeightMapInView) all invalidate.
+	// (This used to also rescan on a 400ms timer "just in case" -- that full-map scan,
+	// with a point-in-water-polygon test per sample, ran 2.5x/sec on the render path and
+	// dropped the framerate while panning with the shoreline visible.)
+	if (m_shorelineDirty)
+		rebuildShorelineCache();
+
+	if (m_shorelineSegCount <= 0 || !m_shorelineSeg)
+		return;
+
+	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexFeedback, D3DLOCK_DISCARD);
+	UnsignedShort *curIb = lockIdxBuffer.Get_Index_Array();
+
+	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexFeedback, D3DLOCK_DISCARD);
+	VertexFormatXYZDUV1 *curVb = (VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
+
+	const DWORD SHORE_COLOR = 0xFFFF0000;	// ARGB red
+
+	// Expand each cached segment into a thick red quad.  No heightmap sampling here.
+	for (Int i = 0; i < m_shorelineSegCount; ++i)
+	{
+		if (m_feedbackVertexCount + 4 > NUM_FEEDBACK_VERTEX || m_feedbackIndexCount + 6 > NUM_FEEDBACK_INDEX)
+			break;
+
+		const float *s = &m_shorelineSeg[i * 5];
+		float ax = s[0], ay = s[1], bx = s[2], by = s[3], wz = s[4];
+
+		Vector3 d(bx - ax, by - ay, 0.0f);
+		d.Normalize(); d *= SHORE_HALF_W; d.Rotate_Z(PI / 2);
+
+		curVb->x=ax+d.X; curVb->y=ay+d.Y; curVb->z=wz; curVb->u1=0; curVb->v1=0; curVb->diffuse=SHORE_COLOR; ++curVb;
+		curVb->x=ax-d.X; curVb->y=ay-d.Y; curVb->z=wz; curVb->u1=0; curVb->v1=0; curVb->diffuse=SHORE_COLOR; ++curVb;
+		curVb->x=bx+d.X; curVb->y=by+d.Y; curVb->z=wz; curVb->u1=0; curVb->v1=0; curVb->diffuse=SHORE_COLOR; ++curVb;
+		curVb->x=bx-d.X; curVb->y=by-d.Y; curVb->z=wz; curVb->u1=0; curVb->v1=0; curVb->diffuse=SHORE_COLOR; ++curVb;
+
+		*curIb++ = m_feedbackVertexCount + 0; *curIb++ = m_feedbackVertexCount + 1; *curIb++ = m_feedbackVertexCount + 2;
+		*curIb++ = m_feedbackVertexCount + 2; *curIb++ = m_feedbackVertexCount + 1; *curIb++ = m_feedbackVertexCount + 3;
+		m_feedbackVertexCount += 4; m_feedbackIndexCount += 6;
 	}
 }
 
@@ -1991,8 +2432,40 @@ void DrawObject::updateVBWithBoundingBox(MapObject *pMapObj, CameraClass* camera
 	}
 
 	unsigned long color = 0xFFFFFF00; // Yellow
-	
+
 	GeometryInfo ginfo = pMapObj->getThingTemplate()->getTemplateGeometryInfo();
+
+	// // Skip the selection bounding box for objects whose footprint spans (nearly) the
+	// // whole map -- e.g. the water/reflection object, which is map-sized -- BUT only when
+	// // the 3D camera is at an angle. Map-sized box corners land at the map edges; in the
+	// // angled perspective view they fan a huge yellow quad across the viewport that
+	// // obscures everything. Looking straight down (top-down camera) the same box reads as
+	// // a clean rectangle framing the map, which is fine, so we keep it there. A normal
+	// // object's radius is tiny compared to the map, so this only affects the map-spanning
+	// // case.
+	// if (camera) {
+	// 	CWorldBuilderDoc *pDoc = CWorldBuilderDoc::GetActiveDoc();
+	// 	WorldHeightMapEdit *pMap = pDoc ? pDoc->GetHeightMap() : NULL;
+	// 	if (pMap) {
+	// 		Real mapW = INT_TO_REAL(pMap->getXExtent() - 2 * pMap->getBorderSize()) * MAP_XY_FACTOR;
+	// 		Real mapH = INT_TO_REAL(pMap->getYExtent() - 2 * pMap->getBorderSize()) * MAP_XY_FACTOR;
+	// 		Real mapMin = (mapW < mapH) ? mapW : mapH;
+	// 		Real objRadius = ginfo.getMajorRadius();
+	// 		if (ginfo.getMinorRadius() > objRadius)
+	// 			objRadius = ginfo.getMinorRadius();
+	// 		Bool mapSized = (mapMin > 0.0f && (objRadius * 2.0f) >= (mapMin * 0.5f));
+
+	// 		// How top-down the camera is: in W3D the camera looks down its -Z axis, so its
+	// 		// Z-vector points backward (toward world +Z when looking straight down). That
+	// 		// Z component is ~1.0 looking straight down and falls off as the view tilts.
+	// 		Real camDownness = (Real)fabs(camera->Get_Transform().Get_Z_Vector().Z);
+	// 		const Real TOPDOWN_THRESHOLD = 0.97f;	// ~14 degrees off straight-down still counts as top-down
+	// 		Bool isTopDown = (camDownness >= TOPDOWN_THRESHOLD);
+
+	// 		if (mapSized && !isTopDown)
+	// 			return;
+	// 	}
+	// }
 
 	// Bool isSmall =  ginfo.getIsSmall() || pMapObj->getThingTemplate()->isKindOf(KINDOF_LOW_OVERLAPPABLE) || pMapObj->getThingTemplate()->isKindOf(KINDOF_STRUCTURE) ;
 	Bool isSmall =  !pMapObj->getThingTemplate()->isKindOf(KINDOF_STRUCTURE);
@@ -2268,6 +2741,104 @@ void DrawObject::addCircleToLineRenderer( const Coord3D & center, Real radius, R
         screenEnd = screenStart;
         shouldEnd = shouldStart;
     }
+}
+
+#define RULER_LINE_WIDTH 2.0f
+/** Draw the ruler feedback (line or circle) into m_lineRenderer, terrain-following
+ ** and inside the D3D frame so it doesn't strobe like the old GDI overlay did. The
+ ** ruler state (type, endpoints, length) lives on the active WbView; we read it here.
+ ** Returns true if anything was added to the line renderer. */
+Bool DrawObject::drawRulerFeedback(CameraClass* camera)
+{
+	if (!m_lineRenderer || !camera) {
+		return false;
+	}
+
+	CWorldBuilderDoc *pDoc = CWorldBuilderDoc::GetActiveDoc();
+	if (!pDoc) {
+		return false;
+	}
+	WbView3d *pView = pDoc->Get3DView();
+	if (!pView) {
+		return false;
+	}
+
+	const int rulerType = pView->getRulerFeedback();
+	if (rulerType == RULER_NONE) {
+		return false;
+	}
+
+	const unsigned long color = 0xFF00FF00; // opaque green
+
+	if (rulerType == RULER_CIRCLE) {
+		addCircleToLineRenderer(pView->getRulerPoint(0), pView->getRulerLength(),
+														RULER_LINE_WIDTH, color, camera);
+		return true;
+	}
+
+	// RULER_LINE: walk the segment, snapping each sample to terrain/water height so
+	// the line drapes over the ground instead of cutting straight through it.
+	const Coord3D& p0 = pView->getRulerPoint(0);
+	const Coord3D& p1 = pView->getRulerPoint(1);
+
+	const int numSteps = 64;
+	ICoord2D screenPrev, screenCur;
+	bool havePrev = false;
+	bool added = false;
+
+	for (int i = 0; i <= numSteps; ++i) {
+		Real t = (Real)i / numSteps;
+		Coord3D wp;
+		wp.x = p0.x + t * (p1.x - p0.x);
+		wp.y = p0.y + t * (p1.y - p0.y);
+		wp.z = TheTerrainRenderObject->getHeightMapHeight(wp.x, wp.y, NULL) + 4.5f;
+
+		if (m_showWater) {
+			Real waterZ = getWaterHeightIfUnderwater(wp.x, wp.y);
+			if (waterZ != -FLT_MAX) {
+				wp.z = waterZ + 4.5f;
+			}
+		}
+
+		bool ok = worldToScreen(&wp, &screenCur, camera);
+		if (havePrev && ok) {
+			m_lineRenderer->Add_Line(Vector2(screenPrev.x, screenPrev.y),
+															 Vector2(screenCur.x, screenCur.y),
+															 RULER_LINE_WIDTH, color);
+			added = true;
+		}
+		screenPrev = screenCur;
+		havePrev = ok;
+	}
+
+	return added;
+}
+
+#define BUCKET_BRUSH_LINE_WIDTH 2.0f
+/** Draw the wave bucket-fill brush circle at the cursor (terrain/water-following, via
+	the line renderer like the ruler).  Drawn only while the wave editor is the selected
+	tool and Bucket is the active mode; the tool clears its cursor flag on mode/tool
+	switches so the circle never lingers.  Returns true if anything was added. */
+Bool DrawObject::drawBucketBrushFeedback(CameraClass* camera)
+{
+	if (!m_lineRenderer || !camera) {
+		return false;
+	}
+
+	float cx, cy;
+	Int radius;
+	if (!WaveEditorTool::getBucketBrush(cx, cy, radius)) {
+		return false;
+	}
+
+	Coord3D center;
+	center.x = cx;
+	center.y = cy;
+	center.z = 0.0f;	// addCircleToLineRenderer samples terrain/water height per segment
+
+	const unsigned long color = 0xFF00FFFF;	// cyan, matching the wave overlay glyphs
+	addCircleToLineRenderer(center, (Real)radius, BUCKET_BRUSH_LINE_WIDTH, color, camera);
+	return true;
 }
 
 #define SIGHT_RANGE_LINE_WIDTH 2.0f
@@ -3087,6 +3658,59 @@ if (_skip_drawobject_render) {
 		}
 	}
 
+	// Draw the wave overlay only while the wave editor is the active tool -- this gate
+	// takes priority over the View toggle, so the cyan/yellow glyphs don't linger over
+	// the map when you're working with another tool. Within an active editor the "Show
+	// wave lines" toggle (m_waveFeedback) fully controls the cyan overlay, INCLUDING the
+	// hover/drag ghost glyph: unchecking it hides every overlay line. The live animated
+	// preview wave is drawn separately by the water-track system, so you still see what
+	// you're placing. When the editor isn't active we also skip the updateWaveVB() cost.
+	if (WaveEditorTool::isEditorActive() && m_waveFeedback) {
+		updateWaveVB();
+		if (m_feedbackIndexCount > 0) {
+			// Wave overlay should always be visible, so disable depth test/write -
+			// the lines draw on top of terrain, trees, objects, etc. (editor aid).
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, FALSE);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE, FALSE);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHABLENDENABLE, FALSE);
+
+			DX8Wrapper::Set_Vertex_Buffer(m_vertexFeedback);
+			DX8Wrapper::Set_Index_Buffer(m_indexFeedback,0);
+			DX8Wrapper::Set_Shader(m_shaderClass);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_CULLMODE, D3DCULL_NONE);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_FILLMODE,D3DFILL_SOLID);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_LIGHTING, FALSE);
+			DX8Wrapper::Draw_Triangles(	0, m_feedbackIndexCount/3, 0,	m_feedbackVertexCount);
+
+			// restore depth testing for anything drawn after us.
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, TRUE);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE, TRUE);
+		}
+	}
+
+	// Red shoreline guide: trace the water/land boundary while the wave editor is the
+	// active tool and the "Show shoreline" toggle is on, so users can see where to paint.
+	// Drawn depth-disabled (like the wave overlay) so it's always visible on top.
+	if (WaveEditorTool::isEditorActive() && m_showShoreline) {
+		updateShorelineVB();
+		if (m_feedbackIndexCount > 0) {
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, FALSE);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE, FALSE);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHABLENDENABLE, FALSE);
+
+			DX8Wrapper::Set_Vertex_Buffer(m_vertexFeedback);
+			DX8Wrapper::Set_Index_Buffer(m_indexFeedback, 0);
+			DX8Wrapper::Set_Shader(m_shaderClass);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_CULLMODE, D3DCULL_NONE);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_FILLMODE, D3DFILL_SOLID);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_LIGHTING, FALSE);
+			DX8Wrapper::Draw_Triangles(0, m_feedbackIndexCount / 3, 0, m_feedbackVertexCount);
+
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, TRUE);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE, TRUE);
+		}
+	}
+
 #if 1
 	if (m_rampFeedback) {
 		updateRampVB();
@@ -3104,13 +3728,16 @@ if (_skip_drawobject_render) {
 	if (m_rulerGridFeedback) {
 		updateGridVB();
 		if (m_feedbackIndexCount > 0) {
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, TRUE);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE, TRUE);
 			DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHABLENDENABLE, FALSE);
 
 			DX8Wrapper::Set_Vertex_Buffer(m_vertexFeedback);
 			DX8Wrapper::Set_Index_Buffer(m_indexFeedback, 0);
-			DX8Wrapper::Set_Shader(SC_OPAQUE_Z); // or any shader that fits
+			// Use SC_OPAQUE (PASS_ALWAYS) rather than SC_OPAQUE_Z (PASS_LEQUAL) so the
+			// grid always draws on top -- over water and terrain alike -- matching how
+			// the ruler line behaves. The two shaders are identical apart from the depth
+			// test; with the Z test on, the water surface was occluding the grid even
+			// though its verts already sit at water height.
+			DX8Wrapper::Set_Shader(SC_OPAQUE);
 			DX8Wrapper::Set_DX8_Render_State(D3DRS_CULLMODE, D3DCULL_NONE);
 			DX8Wrapper::Set_DX8_Render_State(D3DRS_FILLMODE, D3DFILL_SOLID); // or D3DFILL_WIREFRAME if you prefer
 			DX8Wrapper::Set_DX8_Render_State(D3DRS_LIGHTING, FALSE);
@@ -3164,6 +3791,20 @@ if (_skip_drawobject_render) {
 		float dx = (right - left) / (gridX - 1);
 		float dy = (bottom - top) / (gridY - 1);
 
+		// Resolve the per-map overlay file up front (prefers .png over .dds) so we
+		// know the format before baking UVs. PNG decoded by D3DX uses the opposite
+		// vertical convention from the DDS path, so the V coordinate is flipped for
+		// PNG to keep both orientations the same on screen.
+		AsciiString overlayPath = resolveTracingOverlayPath();
+		const char *ext = overlayPath.isEmpty() ? NULL : overlayPath.reverseFind('.');
+		Bool isPng = (ext != NULL && stricmp(ext, ".png") == 0);
+
+		// Per-vertex diffuse drives overlay opacity: the alpha byte modulates the
+		// texture under the alpha-blend shader. White RGB so the texture isn't tinted.
+		Int alpha = m_tracingOverlayOpacity;
+		if (alpha < 0) alpha = 0; else if (alpha > 255) alpha = 255;
+		UnsignedInt diffuse = ((UnsignedInt)alpha << 24) | 0x00FFFFFF;
+
 		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexFeedback, D3DLOCK_DISCARD);
 		VertexFormatXYZDUV1* vb = (VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
 
@@ -3171,6 +3812,7 @@ if (_skip_drawobject_render) {
 		for (int y = 0; y < gridY; ++y) {
 			float fy = top + y * dy;
 			float v = (float)y / (gridY - 1);
+			if (isPng) v = 1.0f - v;	// flip V for PNG so it isn't upside-down
 			for (int x = 0; x < gridX; ++x) {
 				float fx = left + x * dx;
 				float u = (float)x / (gridX - 1);
@@ -3181,7 +3823,7 @@ if (_skip_drawobject_render) {
 				vb[vtxCount].z = fz;
 				vb[vtxCount].u1 = u;
 				vb[vtxCount].v1 = v;
-				vb[vtxCount].diffuse = 0xFFFFFFFF;
+				vb[vtxCount].diffuse = diffuse;
 				vtxCount++;
 			}
 		}
@@ -3214,9 +3856,90 @@ if (_skip_drawobject_render) {
 		DX8Wrapper::Set_Index_Buffer(m_indexFeedback, 0);
 		DX8Wrapper::Set_Shader(ShaderClass::_PresetAlpha2DShader);
 		DX8Wrapper::Set_Material(m_vertexMaterialClass);
-		DX8Wrapper::Set_Texture(0, W3DAssetManager::Get_Instance()->Get_Texture("data\\editor\\trace_overlay.dds"));
-		DX8Wrapper::Draw_Triangles(0, idxCount / 3, 0, vtxCount);
-		DX8Wrapper::Set_Texture(0, NULL);
+
+		// Bind the overlay texture resolved above. DDS goes through the asset
+		// manager as before; PNG is decoded with D3DX (the WW3D2 loader can't read
+		// PNG) and cached until the resolved path changes.
+		TextureClass *overlayTex = NULL;
+
+		if (!overlayPath.isEmpty()) {
+			if (isPng) {
+				// The resize interpolation is baked in at decode time, so picking
+				// the D3DX filter from the current setting (1=nearest -> POINT,
+				// else LINEAR for both the resize and the mip chain).
+				DWORD d3dxFilter = (m_tracingOverlayFilter == 1)
+					? D3DX_FILTER_POINT : D3DX_FILTER_LINEAR;
+
+				// (Re)load the PNG when the resolved path OR the filter changes.
+				if (m_tracingOverlayTexture == NULL ||
+						m_tracingOverlayLoadedPath != overlayPath ||
+						m_tracingOverlayLoadedFilter != m_tracingOverlayFilter) {
+					REF_PTR_RELEASE(m_tracingOverlayTexture);
+					m_tracingOverlayLoadedPath.clear();
+					m_tracingOverlayLoadedFilter = -1;
+
+					IDirect3DTexture8 *d3dTex = NULL;
+					HRESULT hr = D3DXCreateTextureFromFileExA(
+						DX8Wrapper::_Get_D3D_Device8(),
+						overlayPath.str(),
+						D3DX_DEFAULT, D3DX_DEFAULT,
+						D3DX_DEFAULT,					// full mip chain
+						0,
+						D3DFMT_A8R8G8B8,			// force a format that carries alpha
+						D3DPOOL_MANAGED,
+						d3dxFilter, d3dxFilter,
+						0, NULL, NULL,
+						&d3dTex);
+					if (SUCCEEDED(hr) && d3dTex != NULL) {
+						m_tracingOverlayTexture = new TextureClass(d3dTex);
+						m_tracingOverlayLoadedPath = overlayPath;
+						m_tracingOverlayLoadedFilter = m_tracingOverlayFilter;
+						// TextureClass AddRefs the D3D texture; drop our extra ref.
+						d3dTex->Release();
+					}
+				}
+				overlayTex = m_tracingOverlayTexture;
+			} else {
+				// DDS (or any format the asset manager understands).
+				overlayTex = W3DAssetManager::Get_Instance()->Get_Texture(overlayPath.str());
+			}
+		}
+
+		if (overlayTex != NULL) {
+			DX8Wrapper::Set_Texture(0, overlayTex);
+
+			// Flush the shader/texture changes to the device FIRST, then override the
+			// stage-0 state below. _PresetAlpha2DShader uses GRADIENT_DISABLE, which
+			// means the vertex diffuse never reaches the blender -- so on its own the
+			// per-vertex opacity alpha is ignored. We force stage 0 to modulate the
+			// texture alpha by the diffuse alpha (ALPHAOP=MODULATE, ARG1=TEXTURE,
+			// ARG2=DIFFUSE); since the PNG is loaded as A8R8G8B8 (texAlpha=255), the
+			// blend source alpha becomes exactly our opacity byte. Done after the
+			// flush so the shader's own apply doesn't clobber these.
+			DX8Wrapper::Apply_Render_State_Changes();
+
+			DX8Wrapper::Set_DX8_Texture_Stage_State(0, D3DTSS_ALPHAOP, D3DTOP_MODULATE);
+			DX8Wrapper::Set_DX8_Texture_Stage_State(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+			DX8Wrapper::Set_DX8_Texture_Stage_State(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+
+			// Apply the resize interpolation to the runtime sampler too (nearest ->
+			// POINT, default -> LINEAR). This makes DDS honor the setting and keeps
+			// PNG magnification crisp/smooth to match its decode. Restore to LINEAR
+			// (the engine default) afterwards so nothing else is affected.
+			DWORD texFilter = (m_tracingOverlayFilter == 1) ? D3DTEXF_POINT : D3DTEXF_LINEAR;
+			DX8Wrapper::Set_DX8_Texture_Stage_State(0, D3DTSS_MAGFILTER, texFilter);
+			DX8Wrapper::Set_DX8_Texture_Stage_State(0, D3DTSS_MINFILTER, texFilter);
+
+			DX8Wrapper::Draw_Triangles(0, idxCount / 3, 0, vtxCount);
+			DX8Wrapper::Set_Texture(0, NULL);
+
+			// Restore stage-0 alpha to a benign pass-through and the engine-default
+			// LINEAR filtering so nothing drawn afterwards inherits our overrides.
+			DX8Wrapper::Set_DX8_Texture_Stage_State(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+			DX8Wrapper::Set_DX8_Texture_Stage_State(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+			DX8Wrapper::Set_DX8_Texture_Stage_State(0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR);
+			DX8Wrapper::Set_DX8_Texture_Stage_State(0, D3DTSS_MINFILTER, D3DTEXF_LINEAR);
+		}
 	}
 #endif
 
@@ -3252,6 +3975,17 @@ if (_skip_drawobject_render) {
 		m_lineRenderer->Add_Quad(rect, 0xFF000000);
 		rect.Set(0, h - size, w, h);
 		m_lineRenderer->Add_Quad(rect, 0xFF000000);
+		linesToRender = true;
+	}
+
+	// Ruler feedback: drawn here (inside the D3D frame, via the line renderer) so it
+	// no longer strobes the way the old GDI HDC overlay did on a flipping back buffer.
+	if (drawRulerFeedback(&rinfo.Camera)) {
+		linesToRender = true;
+	}
+
+	// Wave bucket-fill brush circle (terrain-following, like the ruler circle).
+	if (drawBucketBrushFeedback(&rinfo.Camera)) {
 		linesToRender = true;
 	}
 

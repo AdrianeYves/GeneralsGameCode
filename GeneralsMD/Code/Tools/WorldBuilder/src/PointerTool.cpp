@@ -384,7 +384,7 @@ Bool PointerTool::allowPick(MapObject* pMapObj, WbView* pView)
 }
 
 /** Execute the tool on mouse down - Pick an object. */
-void PointerTool::mouseDown(TTrackingMode m, CPoint viewPt, WbView* pView, CWorldBuilderDoc *pDoc) 
+void PointerTool::mouseDown(TTrackingMode m, CPoint viewPt, WbView* pView, CWorldBuilderDoc *pDoc)
 {
 	if (m != TRACK_L) return;
 
@@ -546,7 +546,7 @@ void PointerTool::mouseDown(TTrackingMode m, CPoint viewPt, WbView* pView, CWorl
 	}
 
 	m_isMouseDown = true;
-	
+
 }
 
 bool m_groupRotationInit = false;
@@ -865,7 +865,7 @@ void PointerTool::mouseUp(TTrackingMode m, CPoint viewPt, WbView* pView, CWorldB
 			}
 		}
 
-	} 
+	}
 
 	m_isMouseDown = false;
 	checkForPropertiesPanel();

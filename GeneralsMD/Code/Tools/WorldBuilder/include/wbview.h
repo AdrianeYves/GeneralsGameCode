@@ -112,6 +112,9 @@ public:
 	void doRectFeedback(Bool doFeedback, RECT &rect) {m_feedbackBox=rect;m_doRectFeedback = doFeedback;};
 	void doRulerFeedback(int doRulerFeedback) {m_doRulerFeedback = doRulerFeedback;}
 	void rulerFeedbackInfo(Coord3D &point1, Coord3D &point2, Real dist);
+	int getRulerFeedback(void) const { return m_doRulerFeedback; }
+	const Coord3D& getRulerPoint(int i) const { return m_rulerPoints[i]; }
+	Real getRulerLength(void) const { return m_rulerLength; }
 
 	void doLightFeedback(Bool doFeedback, Coord3D direction, Int lightIndex) { m_doLightFeedback=doFeedback; if (m_doLightFeedback) m_lightDirection[lightIndex]=direction;}
 

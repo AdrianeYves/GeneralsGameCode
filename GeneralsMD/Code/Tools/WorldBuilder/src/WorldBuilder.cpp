@@ -106,7 +106,6 @@ void initSubsystem(SUBSYSTEM*& sysref, SUBSYSTEM* sys, const char* path1 = NULL,
 #define APP_SECTION "WorldbuilderApp"
 #define OPEN_FILE_DIR "OpenDirectory"
 #define GAME_DIR "GameDirectory"
-#define EULA "AgreedToEula"
 #define ABOUT_SECTION "AboutWindow"
 
 #define NEWLINE "\r\n"
@@ -249,6 +248,7 @@ CWorldBuilderApp::CWorldBuilderApp() :
 	m_tools[22] = &m_scorchTool;
 	m_tools[23] = &m_borderTool;
 	m_tools[24] = &m_rulerTool;
+	m_tools[25] = &m_waveEditorTool;
 
 	// set up initial values.
 	m_brushTool.setHeight(16);
@@ -287,18 +287,18 @@ BOOL CWorldBuilderApp::InitInstance()
 {
 	
 //#ifdef _RELEASE
-	if (this->GetProfileInt(APP_SECTION, EULA, 0) == 0) {
-		EulaDialog eulaDialog;
-		if (eulaDialog.DoModal() == IDCANCEL) {
-			return FALSE;
-		}
-		/**
-		 * Adriane [Deathscythe] 
-		 * Idk why this thing stores it on c:/windows
-		 * instead of the actual worldbuilder.ini in documents but fuck it -- it works anyways.
-		 */ 
-		this->WriteProfileInt(APP_SECTION, EULA, 1);
-	}
+	// if (this->GetProfileInt(APP_SECTION, EULA, 0) == 0) {
+	// 	EulaDialog eulaDialog;
+	// 	if (eulaDialog.DoModal() == IDCANCEL) {
+	// 		return FALSE;
+	// 	}
+	// 	/**
+	// 	 * Adriane [Deathscythe] 
+	// 	 * Idk why this thing stores it on c:/windows
+	// 	 * instead of the actual worldbuilder.ini in documents but fuck it -- it works anyways.
+	// 	 */ 
+	// 	this->WriteProfileInt(APP_SECTION, EULA, 1);
+	// }
 //#endif
 
 	ApplicationHWnd = GetDesktopWindow();
@@ -332,10 +332,10 @@ BOOL CWorldBuilderApp::InitInstance()
 	loadWindow.SetWindowText("Loading Worldbuilder");
 	loadWindow.ShowWindow(SW_SHOW);
 	loadWindow.UpdateWindow();
-	
-	CRect rect(15, 315, 230, 333);
-	loadWindow.setTextOutputLocation(rect);
-	loadWindow.outputText(IDS_SPLASH_LOADING);
+
+	// The bottom-center loading label is auto-positioned in SplashScreen::OnInitDialog;
+	// just report progress at coarse milestones as init proceeds.
+	loadWindow.setProgress("Starting up...");
 
 	// not part of the subsystem list, because it should normally never be reset!
 	TheNameKeyGenerator = new NameKeyGenerator;
@@ -360,6 +360,7 @@ BOOL CWorldBuilderApp::InitInstance()
 	}
 	::SetCurrentDirectory(buf);
 
+	loadWindow.setProgress("Initializing file system...");
 	TheFileSystem = new FileSystem;
 
 	initSubsystem(TheLocalFileSystem, (LocalFileSystem*)new Win32LocalFileSystem);
@@ -406,6 +407,7 @@ BOOL CWorldBuilderApp::InitInstance()
 	ini.load( AsciiString( "Data\\INI\\Default\\Water.ini" ), INI_LOAD_OVERWRITE, NULL );
 	ini.load( AsciiString( "Data\\INI\\Water.ini" ), INI_LOAD_OVERWRITE, NULL );
 
+	loadWindow.setProgress("Loading game data... fuck you");
 	initSubsystem(TheGameText, CreateGameTextInterface());
 	initSubsystem(TheScienceStore, new ScienceStore(), "Data\\INI\\Default\\Science.ini", "Data\\INI\\Science.ini");
 	initSubsystem(TheMultiplayerSettings, new MultiplayerSettings(), "Data\\INI\\Default\\Multiplayer.ini", "Data\\INI\\Multiplayer.ini");
@@ -441,11 +443,13 @@ BOOL CWorldBuilderApp::InitInstance()
 	initSubsystem(TheLocomotorStore, new LocomotorStore(), NULL, "Data\\INI\\Locomotor.ini");
 	initSubsystem(TheDamageFXStore, new DamageFXStore(), NULL, "Data\\INI\\DamageFX.ini");
 	initSubsystem(TheArmorStore, new ArmorStore(), NULL, "Data\\INI\\Armor.ini");
+	loadWindow.setProgress("Loading objects...");
 	initSubsystem(TheThingFactory, new ThingFactory(), "Data\\INI\\Default\\Object.ini", NULL, "Data\\INI\\Object");
 	initSubsystem(TheCrateSystem, new CrateSystem(), "Data\\INI\\Default\\Crate.ini", "Data\\INI\\Crate.ini");
 	initSubsystem(TheUpgradeCenter, new UpgradeCenter, "Data\\INI\\Default\\Upgrade.ini", "Data\\INI\\Upgrade.ini");
 	initSubsystem(TheAnim2DCollection, new Anim2DCollection ); //Init's itself.
 
+	loadWindow.setProgress("Finalizing...");
 	TheSubsystemListRecord.postProcessLoadAll();
 
 	TheW3DFileSystem = new WB_W3DFileSystem;
@@ -493,6 +497,8 @@ BOOL CWorldBuilderApp::InitInstance()
 	// Dispatch commands specified on the command line
 	if (!ProcessShellCommand(cmdInfo))
 		return FALSE;
+
+	loadWindow.setProgress("Starting WorldBuilder...");
 
 	// The one and only window has been initialized, so show and update it.
 	m_pMainWnd->ShowWindow(SW_SHOW);
@@ -630,8 +636,10 @@ void CWorldBuilderApp::updateCurTool(Bool forceHand)
 		} else if (0x8000 & ::GetAsyncKeyState(VK_MENU)) {
 			// Alt key gives eyedropper.
 			m_curTool = &m_eyedropperTool;
-		} else if (0x8000 & ::GetAsyncKeyState(VK_CONTROL) && m_curTool != &m_fenceTool) {
-			// Control key gives pointer.
+		} else if (0x8000 & ::GetAsyncKeyState(VK_CONTROL) && m_curTool != &m_fenceTool
+							 && m_curTool != &m_waveEditorTool) {
+			// Control key gives pointer.  The fence and wave-editor tools use Ctrl
+			// themselves (wave editor: Ctrl+drag rotates a wave), so don't hijack them.
 			m_curTool = &m_pointerTool;
 		} else {
 			// Else the tool selected in the tool palette.
@@ -693,7 +701,7 @@ protected:
 static CAboutDlg* g_pAboutDlg = NULL;
 
 BEGIN_MESSAGE_MAP(CAboutDlg, CDialog)
-	ON_WM_MOVE()
+	// ON_WM_EXITSIZEMOVE()
 	ON_WM_CLOSE()
 	ON_BN_CLICKED(IDC_FIND_HKEY_BUTTON, OnFindButtonClicked)
 	ON_BN_CLICKED(IDC_EXPAND, OnExpand)
@@ -924,7 +932,6 @@ void CAboutDlg::OnMove(int x, int y)
 		::AfxGetApp()->WriteProfileInt(ABOUT_SECTION, "Top", frameRect.top);
 		::AfxGetApp()->WriteProfileInt(ABOUT_SECTION, "Left", frameRect.left);
 	}
-	
 }
 
 void CAboutDlg::OnOK() 
@@ -940,7 +947,7 @@ void CAboutDlg::OnOK()
     // }
 }
 
-void CAboutDlg::OnClose() 
+void CAboutDlg::OnClose()
 {
 	g_aboutPageOn = false;
 	CDialog::OnClose();
@@ -1201,7 +1208,7 @@ void CWorldBuilderApp::OnAppAbout()
 /////////////////////////////////////////////////////////////////////////////
 // CWorldBuilderApp message handlers
 
-int CWorldBuilderApp::ExitInstance() 
+int CWorldBuilderApp::ExitInstance()
 {
 
 	WriteProfileString(APP_SECTION, OPEN_FILE_DIR, m_currentDirectory.str());

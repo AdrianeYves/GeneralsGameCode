@@ -107,8 +107,8 @@ void WaypointOptions::updateTheUI(void)
 	CWnd *pWnd = this->GetDlgItem(IDC_WAYPOINTNAME_EDIT);
 	CWnd *pCaption1 = this->GetDlgItem(IDC_WAYPOINT_CAPTION1);
 	CWnd *pCaption2 = this->GetDlgItem(IDC_WAYPOINT_PATHLABELS);
-	CWnd *pCaption3 = this->GetDlgItem(65535);
-	CWnd *pCaption4 = this->GetDlgItem(65534);
+	// CWnd *pCaption3 = this->GetDlgItem(65535);
+	// CWnd *pCaption4 = this->GetDlgItem(65534);
 	CWnd *pCaption5 = this->GetDlgItem(IDC_LIST_WAYPOINTS);
 
 	CComboBox *pCombo = (CComboBox*)GetDlgItem(IDC_WAYPOINTNAME_EDIT);
@@ -290,8 +290,8 @@ void WaypointOptions::updateTheUI(void)
 		pWaypointLocation->ShowWindow(SW_HIDE);
 		pWaypointY->ShowWindow(SW_HIDE);
 		pWaypointX->ShowWindow(SW_HIDE);
-		pCaption3->ShowWindow(SW_HIDE);
-		pCaption4->ShowWindow(SW_HIDE);
+		// pCaption3->ShowWindow(SW_HIDE);
+		// pCaption4->ShowWindow(SW_HIDE);
 		pCaption5->ShowWindow(SW_HIDE);
 		pWaypointLabel1->ShowWindow(SW_HIDE);
 		pWaypointLabel2->ShowWindow(SW_HIDE);

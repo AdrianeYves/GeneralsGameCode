@@ -33,6 +33,8 @@
 
 // Saved off so that static functions can access its members.
 RulerTool*	RulerTool::m_staticThis = NULL;
+Bool		RulerTool::m_useMeters = FALSE;
+Bool		RulerTool::m_showGridOnActivate = TRUE;
 
 /// Constructor
 RulerTool::RulerTool(void) :
@@ -54,7 +56,17 @@ void RulerTool::activate()
 {
 	Tool::activate();
 	CMainFrame::GetMainFrame()->showOptionsDialog(IDD_RULER_OPTIONS);
-	DrawObject::setDoGridFeedback(TRUE);
+
+	// Only force the ruler grid overlay on if the option is enabled; otherwise leave
+	// the user's global Show Ruler Grid (Ctrl+Q) setting untouched.
+	if (m_showGridOnActivate) {
+		DrawObject::setDoGridFeedback(TRUE);
+	} else {
+		WbView3d *p3View = CWorldBuilderDoc::GetActive3DView();
+		if (p3View) {
+			DrawObject::setDoGridFeedback(p3View->getShowGridFeedback());
+		}
+	}
 
 	if (m_View != NULL) {
 		// Is it dangerous to assume that the pointer is still good?
@@ -153,7 +165,8 @@ void RulerTool::setLength(Real length)
 	}
 
 	CString str;
- 	str.Format("Diameter (in feet): %f", length * 2.0f);
+	const char *units = m_useMeters ? "meters" : "feet";
+	str.Format("Diameter (in %s): %f", units, toDisplayUnits(length * 2.0f));
 	CMainFrame::GetMainFrame()->SetMessageText(str);
 }
 
@@ -191,4 +204,23 @@ Real RulerTool::getLength(void)
 	}
 
 	return (0.0f);
+}
+
+void RulerTool::setShowGridOnActivate(Bool val)
+{
+	m_showGridOnActivate = val;
+
+	// If the ruler is the active tool, apply the change live so the user sees the
+	// grid appear/disappear immediately rather than on the next activation.
+	if (m_staticThis && m_staticThis->m_View) {
+		if (val) {
+			DrawObject::setDoGridFeedback(TRUE);
+		} else {
+			WbView3d *p3View = CWorldBuilderDoc::GetActive3DView();
+			if (p3View) {
+				DrawObject::setDoGridFeedback(p3View->getShowGridFeedback());
+			}
+		}
+		m_staticThis->m_View->Invalidate();
+	}
 }

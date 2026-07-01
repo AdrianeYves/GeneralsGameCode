@@ -24,6 +24,7 @@
 #include "resource.h"
 #include "wwmath.h"
 #include "ww3d.h"
+#include <vector>
 #include "texturefilter.h"
 #include "scene.h"
 #include "rendobj.h"
@@ -61,6 +62,8 @@
 #include "shattersystem.h"
 #include "light.h"
 #include "texproject.h"
+#include "rinfo.h"
+#include "W3DDevice/GameClient/W3DWaterTracks.h"
 #include "MapSettings.h"
 #include "predlod.h"
 #include "SelectMacrotexture.h"
@@ -76,11 +79,14 @@
 #include "W3DDevice/Common/W3DConvert.h"
 #include "W3DDevice/GameClient/W3DShadow.h"
 #include "DrawObject.h"
+#include "RulerTool.h"
+#include "TracingOverlayOptions.h"
 #include "GameLogic/PolygonTrigger.h"
 #include "Common/MapObject.h"
 #include "Common/GlobalData.h"
 #include "ShadowOptions.h"
 #include "WorldBuilder.h"
+#include "WaveEditorTool.h"	// WaveEditorTool::isEditorActive() gates the wave-track flush()
 #include "wbview3d.h"
 #include "Common/Debug.h"
 #include "Common/ThingFactory.h"
@@ -602,6 +608,8 @@ WbView3d::WbView3d() :
 	m_cameraAngle(0.0),
 	m_FXPitch(1.0f),
 	m_actualHeightAboveGround(0.0f),
+	m_cameraGroundZ(0.0f),
+	m_cameraBorderWorld(0.0f),
 	m_doPitch(false),
 	m_theta(0.0),
 	m_time(0),
@@ -615,6 +623,8 @@ WbView3d::WbView3d() :
 	m_showEntireMap(false),
 	m_partialMapSize(129),
 	m_showWireframe(false),
+	m_showFullWireframe(false),
+	m_showSelectionOverlay(false),
 	m_projection(false),
 	m_showShadows(false),
 	m_firstPaint(true),
@@ -655,6 +665,8 @@ WbView3d::WbView3d() :
 	}
 
 	m_showWireframe = (::AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "ShowWireframe", 0) != 0);
+	m_showFullWireframe = (::AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "ShowFullWireframe", 0) != 0);
+	m_showSelectionOverlay = (::AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "ShowSelectionOverlay", 0) != 0);
 	m_showEntireMap = (::AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "ShowEntireMap", 1) != 0);
 	m_projection = (::AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "ShowTopDownView", 0) != 0);
 	m_showShadows = (::AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "ShowShadows", 1) != 0);
@@ -735,6 +747,13 @@ void WbView3d::shutdownWW3D(void)
 #ifdef SAMPLE_DYNAMIC_LIGHT
 		REF_PTR_RELEASE(theDynamicLight);
 #endif
+		// Wave editor: free the water-track system (and its DX8 buffers) while the
+		// device is still alive.
+		if (TheWaterTracksRenderSystem) {
+			delete TheWaterTracksRenderSystem;
+			TheWaterTracksRenderSystem = NULL;
+		}
+
 		WW3D::Shutdown();
 
 		WWMath::Shutdown();
@@ -758,6 +777,9 @@ void WbView3d::ReleaseResources(void)
 	m3DFont = NULL;
 	if (m_drawObject) {
 		m_drawObject->freeMapResources();
+	}
+	if (TheWaterTracksRenderSystem) {
+		TheWaterTracksRenderSystem->ReleaseResources();
 	}
 }
 
@@ -804,6 +826,10 @@ void WbView3d::ReAcquireResources(void)
 		
 	} else {
 		m3DFont = NULL;
+	}
+
+	if (TheWaterTracksRenderSystem) {
+		TheWaterTracksRenderSystem->ReAcquireResources();
 	}
 
 }
@@ -900,7 +926,23 @@ void WbView3d::setupCamera()
 	pos.y = m_centerPt.Y* MAP_XY_FACTOR;
 	pos.z = m_centerPt.Z* MAP_XY_FACTOR;
 
-	Real groundLevel = m_heightMapRenderObj?getHeightAroundPos(m_heightMapRenderObj, pos.x, pos.y) : 0;  
+	Real groundLevel = m_heightMapRenderObj?getHeightAroundPos(m_heightMapRenderObj, pos.x, pos.y) : 0;
+	// // Cache the terrain height under the camera so the minimap view box can intersect
+	// // the frustum against the real ground (getViewFrustumGroundCorners). m_centerPt.Z is
+	// // always 0, so the old "groundZ = m_centerPt.Z * MAP_XY_FACTOR" was a flat z=0 plane,
+	// // which drifted the box on non-flat / non-square maps.
+	// m_cameraGroundZ = groundLevel;
+
+	// // Cache the border offset in world units. The camera/eye is in ABSOLUTE cell-index
+	// // world (m_centerPt includes the border), but minimap dots, terrain, and
+	// // MapObject::getLocation() are all BORDER-RELATIVE. getViewFrustumGroundCorners
+	// // subtracts this so its corners share the object world space (so the drawn box AND
+	// // the isInViewFrustum cull line up with the blips instead of being shifted by the
+	// // border).
+	// {
+	// 	WorldHeightMapEdit *pMapForBorder = WbDoc() ? WbDoc()->GetHeightMap() : NULL;
+	// 	m_cameraBorderWorld = pMapForBorder ? (pMapForBorder->getBorderSize() * MAP_XY_FACTOR) : 0.0f;
+	// }
 
 	// set position of camera itself
 	/*
@@ -2102,9 +2144,10 @@ void WbView3d::invalObjectInView(MapObject *pMapObjIn)
 // ----------------------------------------------------------------------------
 void WbView3d::updateHeightMapInView(WorldHeightMap *htMap, Bool partial, const IRegion2D &partialRange)
 {
-	if (htMap == NULL) 
+	if (htMap == NULL)
 		return;
 	++m_updateCount;
+	DrawObject::invalidateShoreline();	// terrain/map changed -> wave editor's shoreline guide must rescan
 
 	if (m_heightMapRenderObj == NULL) {
 		m_heightMapRenderObj = NEW_REF(WBHeightMap,());
@@ -2163,12 +2206,71 @@ void WbView3d::setCenterInViewDeferred(Real x, Real y)
 		m_centerPt.Y = y;
 		constrainCenterPt();
 		updateHysteresis();
+		// Rebuild the camera transform NOW (no D3D present -- setupCamera only sets
+		// m_camera's matrix) so the minimap view box, which projects the frustum via
+		// getViewFrustumGroundCorners(), reflects the new center on this same click.
+		// Without this the box reads the stale transform and lags one click behind
+		// (the first click appears to do nothing).
+		// setupCamera();
 		// Do NOT render here. Let the 3D view's own OnPaint/OnTimer loop do the
 		// D3D present on its own thread/window context. Rendering from the Minimap
 		// dialog's message handler corrupts the device and blanks the viewport.
 		Invalidate(FALSE);
 		CMainFrame::GetMainFrame()->handleCameraChange();
 	}
+}
+
+Bool WbView3d::getViewFrustumGroundCorners(Coord3D corners[4])
+{
+	if (!m_camera)
+		return FALSE;
+
+	// Cast a ray from the camera through each viewport corner (normalized device
+	// space, -1..1) and intersect the ground plane z = groundZ. groundZ is the actual
+	// terrain height under the camera center, cached by setupCamera. (Do NOT use
+	// m_centerPt.Z here -- it is permanently 0, which intersected a flat z=0 plane and
+	// drifted the box off the camera on non-flat / non-square maps, worst along +Y.)
+	const Real groundZ = m_cameraGroundZ;
+	const Vector3 eye = m_camera->Get_Position();
+
+	// NDC corners in view order: top-left, top-right, bottom-right, bottom-left.
+	// (+Y is up in view space, so top = +1.)
+	static const Vector2 ndc[4] = {
+		Vector2(-1.0f,  1.0f),
+		Vector2( 1.0f,  1.0f),
+		Vector2( 1.0f, -1.0f),
+		Vector2(-1.0f, -1.0f)
+	};
+
+	for (int i = 0; i < 4; ++i)
+	{
+		Vector3 onPlane;
+		m_camera->Un_Project(onPlane, ndc[i]);
+		Vector3 dir = onPlane - eye;
+
+		// Intersect ray eye + t*dir with plane z = groundZ.
+		Real denom = dir.Z;
+		Real t;
+		if (denom > -1.0e-6f && denom < 1.0e-6f)
+			t = 1.0f;					// ray parallel to ground; degenerate, just use the plane pt
+		else
+			t = (groundZ - eye.Z) / denom;
+
+		// If the corner points away from the ground (t<=0, looking at the horizon),
+		// push it far out along the ray so the box edge still spans the view.
+		if (t <= 0.0f)
+			t = 100000.0f;
+
+		Vector3 hit = eye + dir * t;
+		// Convert from absolute (border-included) world to BORDER-RELATIVE world so the
+		// corners match MapObject::getLocation() -- the space the minimap dots, terrain,
+		// and the isInViewFrustum cull all use. Without this the box and cull are shifted
+		// by border*MAP_XY_FACTOR (the box lands over the wrong part of the map).
+		corners[i].x = hit.X - m_cameraBorderWorld;
+		corners[i].y = hit.Y - m_cameraBorderWorld;
+		corners[i].z = hit.Z;
+	}
+	return TRUE;
 }
 
 //=============================================================================
@@ -2750,7 +2852,15 @@ void WbView3d::render()
 			m_heightMapRenderObj->Set_Hidden((m_showTerrain ? 0 : 1));
 			m_heightMapRenderObj->doTextures(true);
 		}
-		m_scene->Set_Polygon_Mode(SceneClass::FILL);
+		// Full wireframe mode renders the entire scene (terrain, objects, roads, bridges)
+		// in LINE mode with textures off, replacing the solid pass.  The legacy
+		// m_showWireframe path (below) is an additive POINT overlay on top of the solid
+		// render and is left unchanged.
+		m_scene->Set_Polygon_Mode(m_showFullWireframe ? SceneClass::LINE : SceneClass::FILL);
+		m_baseBuildScene->Set_Polygon_Mode(m_showFullWireframe ? SceneClass::LINE : SceneClass::FILL);
+		if (m_showFullWireframe && m_heightMapRenderObj) {
+			m_heightMapRenderObj->doTextures(false);
+		}
 		// Render 3D scene
 
 		try {
@@ -2847,8 +2957,17 @@ void WbView3d::render()
 		newAmb.Y *= gMul;
 		if (newAmb.X>1) newAmb.X = 1;
 		m_baseBuildScene->Set_Ambient_Light(newAmb); 
-		WW3D::Render(m_baseBuildScene,m_camera);	
-		m_baseBuildScene->Set_Ambient_Light(amb); 
+		WW3D::Render(m_baseBuildScene,m_camera);
+		m_baseBuildScene->Set_Ambient_Light(amb);
+
+		if (m_showFullWireframe) {
+			// Restore solid fill / textures so subsequent passes (overlays, labels) draw normally.
+			m_scene->Set_Polygon_Mode(SceneClass::FILL);
+			m_baseBuildScene->Set_Polygon_Mode(SceneClass::FILL);
+			if (m_heightMapRenderObj) {
+				m_heightMapRenderObj->doTextures(true);
+			}
+		}
 
 		if (m_showWireframe) {
 			if (m_heightMapRenderObj) {
@@ -2875,7 +2994,27 @@ void WbView3d::render()
 			DX8TextureCategoryClass::SetForceMultiply(false);
 			m_transparentObjectsScene->Remove_Render_Object(m_objectToolTrackingObj);
 		}
-		
+
+		// Wave editor: draw any placed water-track waves on top of the terrain, but ONLY
+		// while the wave editor is the selected palette tool. We check getSelTool() (not
+		// getCurTool()) so transient Space/Alt/Ctrl tool swaps don't turn the waves off
+		// mid-edit. When the wave tool isn't selected we never call flush(), so the wave
+		// renderer's per-frame cost (update() + a D3D camera apply) is gone entirely --
+		// that lingering cost was felt as a small select/deselect delay.
+		//
+		// flush() gates on m_showSoftWaterEdge (the user's View > Show Soft Water setting),
+		// so we force it on just for this call and restore it immediately -- this lets the
+		// editor's waves draw even with soft water off, without persisting the change or
+		// clobbering the user's setting. flush() internally calls update(), so no separate
+		// animation tick is needed.
+		if (TheWaterTracksRenderSystem && WaveEditorTool::isEditorActive()) {
+			Bool savedSoftWater = TheGlobalData->m_showSoftWaterEdge;
+			TheWritableGlobalData->m_showSoftWaterEdge = true;
+			RenderInfoClass rinfo(*m_camera);
+			TheWaterTracksRenderSystem->flush(rinfo);
+			TheWritableGlobalData->m_showSoftWaterEdge = savedSoftWater;
+		}
+
 		// Draw the 3d obj icons on top of the rest of the data.
 		WW3D::Render(m_overlayScene,m_camera);	
 		//if (mytext) mytext->Render();
@@ -2883,7 +3022,7 @@ void WbView3d::render()
 			drawLabels(NULL);
 		}
 
-		
+
 		WW3D::End_Render();
 	}
 	--m_updateCount;
@@ -2903,6 +3042,10 @@ BEGIN_MESSAGE_MAP(WbView3d, WbView)
 	ON_WM_SHOWWINDOW()
 	ON_COMMAND(ID_VIEW_SHOWWIREFRAME, OnViewShowwireframe)
 	ON_UPDATE_COMMAND_UI(ID_VIEW_SHOWWIREFRAME, OnUpdateViewShowwireframe)
+	ON_COMMAND(ID_VIEW_SHOWFULLWIREFRAME, OnViewShowfullwireframe)
+	ON_UPDATE_COMMAND_UI(ID_VIEW_SHOWFULLWIREFRAME, OnUpdateViewShowfullwireframe)
+	ON_COMMAND(ID_VIEW_SHOWSELECTIONOVERLAY, OnViewShowselectionoverlay)
+	ON_UPDATE_COMMAND_UI(ID_VIEW_SHOWSELECTIONOVERLAY, OnUpdateViewShowselectionoverlay)
 	ON_WM_ERASEBKGND()
 	ON_COMMAND(ID_VIEW_SHOWENTIRE3DMAP, OnViewShowentire3dmap)
 	ON_UPDATE_COMMAND_UI(ID_VIEW_SHOWENTIRE3DMAP, OnUpdateViewShowentire3dmap)
@@ -2971,6 +3114,8 @@ BEGIN_MESSAGE_MAP(WbView3d, WbView)
 	ON_UPDATE_COMMAND_UI(ID_MINIMAP_RES_2048, OnUpdateMinimapRes2048)
 	ON_COMMAND(ID_VIEW_SHOWMAPBOUNDARIES, OnViewShowMapBoundaries)
 	ON_UPDATE_COMMAND_UI(ID_VIEW_SHOWMAPBOUNDARIES, OnUpdateViewShowMapBoundaries)
+	ON_COMMAND(ID_VIEW_SHOWWAVELINES, OnViewShowWaveLines)
+	ON_UPDATE_COMMAND_UI(ID_VIEW_SHOWWAVELINES, OnUpdateViewShowWaveLines)
 	ON_COMMAND(ID_VIEW_RULERGRID, OnViewShowRulerGrid)
 	ON_UPDATE_COMMAND_UI(ID_VIEW_RULERGRID, OnUpdateViewShowRulerGrid)
 	ON_COMMAND(ID_VIEW_SHOWTRACINGOVERLAY, OnViewShowTracingOverlay)
@@ -3131,6 +3276,13 @@ void WbView3d::initWW3D()
 #endif
 		updateLights();
 		resetRenderObjects();
+
+		// Wave editor: create the water-track system so the Wave Editor tool can
+		// place/render/save waves directly in WorldBuilder (no game launch).
+		if (!TheWaterTracksRenderSystem) {
+			TheWaterTracksRenderSystem = new WaterTracksRenderSystem;
+			TheWaterTracksRenderSystem->init();
+		}
 	}
 }
 
@@ -3156,6 +3308,7 @@ int WbView3d::OnCreate(LPCREATESTRUCT lpCreateStruct)
 
 	m_showLayersList = AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "ShowLayersList", 0);
 	m_showMapBoundaries = AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "ShowMapBoundaries", 0);
+	m_showWaveLines = AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "ShowWaveLines", 1);	// default ON
 	m_showAmbientSounds = AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "ShowAmbientSounds", 0);
 	m_showBaseRadius = AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "ShowBaseRadius", 1);
 	m_showSubDraw = AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "ShowSubDraw", 1);
@@ -3163,20 +3316,40 @@ int WbView3d::OnCreate(LPCREATESTRUCT lpCreateStruct)
 	m_showRulerGrid = AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "ShowRulerGrid", 1);
 	m_showTracingOverlay = AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "ShowTracingOverlay", 0);
 
+	// Load persisted tracing-overlay appearance (opacity + interpolation) from the
+	// [Appearance] section and push it into DrawObject so the overlay is correct
+	// before the settings dialog is ever opened.
+	TracingOverlayOptions::loadAndApplySettings();
 
-	CFileFind finder;
-	BOOL fileExists = finder.FindFile("data\\editor\\trace_overlay.dds");
-	if (!fileExists)
+
+	// The tracing overlay is per-map (data\editor\<mapname>.png or .dds). If the
+	// setting was left on but no overlay file exists for this map, warn and clear
+	// it so we don't draw nothing.
+	if (DrawObject::resolveTracingOverlayPath().isEmpty())
 	{
 		if(m_showTracingOverlay){
+			AsciiString base = DrawObject::getTracingOverlayBaseName();
+
+			// PNG can be any size, so it gets this map's exact extents; DDS wants
+			// power-of-two, so it gets those extents rounded up.
+			AsciiString pngSuffix;
+			AsciiString ddsSuffix;
+			Int pngW, pngH, ddsW, ddsH;
+			if (DrawObject::getTracingOverlayRecommendedSize(pngW, pngH, ddsW, ddsH)) {
+				pngSuffix.format("   (recommended %d x %d)", pngW, pngH);
+				ddsSuffix.format("   (recommended %d x %d, power of two)", ddsW, ddsH);
+			}
+
+			AsciiString msg;
+			msg.format(
+				"Missing tracing overlay texture:\n\n"
+				"    %s.png%s\n"
+				"    %s.dds%s\n\n"
+				"The tracing overlay will not be displayed until a PNG or DDS file "
+				"with one of these names is present.",
+				base.str(), pngSuffix.str(), base.str(), ddsSuffix.str());
 			::MessageBeep(MB_ICONERROR);
-			AfxMessageBox(
-				"Missing texture:\n"
-				"data\\editor\\trace_overlay.dds\n\n"
-				"The tracing overlay will not be displayed until this texture is restored.\n\n"
-				"You little shit, did you not install the worldbuilder properly? the texture file was supposed to be on the zip file - did you delete it?.",
-				MB_ICONERROR | MB_OK
-			);
+			AfxMessageBox(msg.str(), MB_ICONERROR | MB_OK);
 		}
 		m_showTracingOverlay = 0;
 		::AfxGetApp()->WriteProfileInt(MAIN_FRAME_SECTION, "ShowTracingOverlay", m_showTracingOverlay ? 1 : 0);
@@ -3197,6 +3370,7 @@ int WbView3d::OnCreate(LPCREATESTRUCT lpCreateStruct)
 
 
 	DrawObject::setDoBoundaryFeedback(m_showMapBoundaries);
+	DrawObject::setDoWaveFeedback(m_showWaveLines);
 	DrawObject::setDoGridFeedback(m_showRulerGrid);
 	DrawObject::setDoAmbientSoundFeedback(m_showAmbientSounds);
 	DrawObject::setDoTracingOverlayFeedback(m_showTracingOverlay);
@@ -3289,7 +3463,7 @@ void WbView3d::drawCircle(HDC hdc, const Coord3D& centerPoint, Real radius, COLO
 
         // Optional: Adjust for water if needed
         if (m_showWater) {
-            Real waterHeight = getWaterHeightIfUnderwaterx(pnt.x, pnt.y) - 30.0f;
+            Real waterHeight = getWaterHeightIfUnderwaterx(pnt.x, pnt.y);
             if (waterHeight != -FLT_MAX) {
                 pnt.z = waterHeight + 4.5f;
             }
@@ -3449,7 +3623,7 @@ void WbView3d::drawLabels(HDC hdc)
 
 
 	int totalWorldCash = 0;
-	
+
 	// Draw labels.
 	MapObject *pMapObj;
 	if (true) {
@@ -3867,59 +4041,9 @@ void WbView3d::drawLabels(HDC hdc)
 		}
 	}
 
-	if (hdc && m_doRulerFeedback) {
-		if (m_doRulerFeedback == RULER_LINE) {
-			// Create and select a green pen. Remember the old one so that it can be restored.
-			HPEN pen = CreatePen(PS_SOLID, 2, RGB(0,255,0));
-			HPEN penOld = (HPEN)SelectObject(hdc, pen); 
-
-			const Coord3D& p0 = m_rulerPoints[0];
-			const Coord3D& p1 = m_rulerPoints[1];
-
-			const int numSteps = 64; // Controls resolution of the curve
-			CPoint lastPt;
-			bool hasLast = false;
-
-			for (int i = 0; i <= numSteps; ++i) {
-				float t = (float)i / numSteps;
-
-				Coord3D wp;
-				wp.x = p0.x + t * (p1.x - p0.x);
-				wp.y = p0.y + t * (p1.y - p0.y);
-
-				// Get terrain height at this position
-				wp.z = TheTerrainRenderObject->getHeightMapHeight(wp.x, wp.y, NULL);
-				wp.z -= 30.0f;  // tune this value
-
-				// Optional: lift above water if needed
-				if (m_showWater) {
-					Real waterHeight = getWaterHeightIfUnderwaterx(wp.x, wp.y);
-					waterHeight -= 30.0f;  // tune this value
-					if (waterHeight != -FLT_MAX) {
-						wp.z = waterHeight;
-					}
-				}
-
-				CPoint screenPt;
-				docToViewCoords(wp, &screenPt);
-
-				if (hasLast) {
-				// Draw line segment manually
-				::MoveToEx(hdc, lastPt.x, lastPt.y, NULL);
-				::LineTo(hdc, screenPt.x, screenPt.y);
-				}
-
-				lastPt = screenPt;
-				hasLast = true;
-			}
-
-			// Restore previous pen.
-			SelectObject(hdc, penOld);
-			DeleteObject(pen);
-		} else if (m_doRulerFeedback == RULER_CIRCLE) {
-      		drawCircle( hdc, m_rulerPoints[0], m_rulerLength, RGB( 0, 255, 0 ) );
-		}  
-	}
+	// Ruler feedback is now drawn inside the D3D frame by DrawObject (via the line
+	// renderer) instead of with GDI here -- GDI-on-a-flipping-back-buffer made it
+	// strobe and barely show. See DrawObject::drawRulerFeedback().
 
 	if (hdc && m_doLightFeedback)
 	{	//Draw Lines to indicate the direction of each light source
@@ -4014,24 +4138,27 @@ BOOL WbView3d::OnMouseWheel(UINT nFlags, short zDelta, CPoint pt)
 {
 	if (m_trackingMode == TRACK_NONE) {
 
+		// Holding Shift zooms faster (coarse zoom for quickly covering distance).
+		const Int wheelBoost = (nFlags & MK_SHIFT) ? 4 : 1;
+
 		//WST 11/21/02 New Triple speed camera zoom request by designers
 		if (getCurrentZoom() > 2.0f)
 		{
-			m_mouseWheelOffset += zDelta;
+			m_mouseWheelOffset += zDelta * wheelBoost;
 		}
 		else if (getCurrentZoom() > 1.0f)
 		{
-			m_mouseWheelOffset += zDelta/2;
+			m_mouseWheelOffset += zDelta * wheelBoost / 2;
 		}
 		else
 		{
-			m_mouseWheelOffset += zDelta/8;
+			m_mouseWheelOffset += zDelta * wheelBoost / 8;
 		}
 
 		MSG msg;
 		while (::PeekMessage(&msg, m_hWnd, WM_MOUSEWHEEL, WM_MOUSEWHEEL, PM_REMOVE)) {
 			zDelta = (short) HIWORD(msg.wParam);    // wheel rotation
-			m_mouseWheelOffset += zDelta;
+			m_mouseWheelOffset += zDelta * wheelBoost;
 		}
 		redraw();
 		updateHysteresis();
@@ -4102,6 +4229,13 @@ void WbView3d::setDefaultCamera()
 }
 
 // ----------------------------------------------------------------------------
+// Round an angle (radians) to the nearest 45-degree (PI/4) step.
+static Real snapAngleTo45(Real a)
+{
+	const Real step = PI / 4.0f;
+	return step * floor(a / step + 0.5f);
+}
+
 void WbView3d::rotateCamera(Real delta)
 {
 	if (m_projection) return; // camera doesn't rotate in top down view.
@@ -4164,7 +4298,7 @@ Real WbView3d::getCurrentZoom(void)
 }
 
 // ----------------------------------------------------------------------------
-void WbView3d::OnTimer(UINT nIDEvent) 
+void WbView3d::OnTimer(UINT nIDEvent)
 {
 	if (getLastDrawTime()+UPDATE_TIME<::GetTickCount()) 
 	{
@@ -4208,10 +4342,35 @@ void WbView3d::OnViewShowwireframe()
 	::AfxGetApp()->WriteProfileInt(MAIN_FRAME_SECTION, "ShowWireframe", m_showWireframe?1:0);
 }
 
-void WbView3d::OnUpdateViewShowwireframe(CCmdUI* pCmdUI) 
+void WbView3d::OnUpdateViewShowwireframe(CCmdUI* pCmdUI)
 {
 	pCmdUI->SetCheck(m_showWireframe?1:0);
-	
+
+}
+
+void WbView3d::OnViewShowfullwireframe()
+{
+	m_showFullWireframe = !m_showFullWireframe;
+	::AfxGetApp()->WriteProfileInt(MAIN_FRAME_SECTION, "ShowFullWireframe", m_showFullWireframe?1:0);
+}
+
+void WbView3d::OnUpdateViewShowfullwireframe(CCmdUI* pCmdUI)
+{
+	pCmdUI->SetCheck(m_showFullWireframe?1:0);
+}
+
+void WbView3d::OnViewShowselectionoverlay()
+{
+	m_showSelectionOverlay = !m_showSelectionOverlay;
+	::AfxGetApp()->WriteProfileInt(MAIN_FRAME_SECTION, "ShowSelectionOverlay", m_showSelectionOverlay?1:0);
+	// Repaint the minimap so its selection halos appear/disappear with the toggle.
+	if (TheMinimapDialog)
+		TheMinimapDialog->requestRebuild(false);
+}
+
+void WbView3d::OnUpdateViewShowselectionoverlay(CCmdUI* pCmdUI)
+{
+	pCmdUI->SetCheck(m_showSelectionOverlay?1:0);
 }
 
 BOOL WbView3d::OnEraseBkgnd(CDC* pDC) 
@@ -4711,6 +4870,24 @@ void WbView3d::OnUpdateViewShowMapBoundaries(CCmdUI* pCmdUI)
 	pCmdUI->SetCheck(m_showMapBoundaries ? 1 : 0);
 }
 
+void WbView3d::OnViewShowWaveLines()
+{
+	setShowWaveLines(!m_showWaveLines);
+}
+
+void WbView3d::setShowWaveLines(Bool show)
+{
+	m_showWaveLines = show;
+	::AfxGetApp()->WriteProfileInt(MAIN_FRAME_SECTION, "ShowWaveLines", m_showWaveLines ? 1 : 0);
+	DrawObject::setDoWaveFeedback(m_showWaveLines);
+	Invalidate(false);
+}
+
+void WbView3d::OnUpdateViewShowWaveLines(CCmdUI* pCmdUI)
+{
+	pCmdUI->SetCheck(m_showWaveLines ? 1 : 0);
+}
+
 void WbView3d::OnViewShowRulerGrid()
 {
 	m_showRulerGrid = !m_showRulerGrid;
@@ -4729,29 +4906,78 @@ void WbView3d::OnViewShowTracingOverlay()
 
 	if (m_showTracingOverlay)
 	{
+		// The overlay file is per-map: data\editor\<mapname>.png (or .dds), where
+		// <mapname> is the current map's name (falls back to "trace_overlay" if
+		// the map hasn't been saved yet).
+		AsciiString base = DrawObject::getTracingOverlayBaseName();
+
 		if(!g_alreadyHintedTraceOverlay){
-			AfxMessageBox(
-				"This feature is used to overlay a texture on the map -- it needs to be a dds file under your game directory\\data\\editor\\trace_overlay.dds",
-				MB_ICONINFORMATION | MB_OK
-			);
+			// Tell the user where to put the file and what proportions to author
+			// it at, using the current map's cell extents.
+			AsciiString hint;
+			hint.format(
+				"This feature overlays a texture on the map.\n\n"
+				"Place a PNG or DDS image at one of:\n"
+				"    %s.png\n"
+				"    %s.dds\n"
+				"(relative to your game directory; PNG is preferred if both exist).\n\n",
+				base.str(), base.str());
+
+			CWorldBuilderDoc *pDoc = CWorldBuilderDoc::GetActiveDoc();
+			WorldHeightMapEdit *pMap = pDoc ? pDoc->GetHeightMap() : NULL;
+			if (pMap) {
+				AsciiString dims;
+				dims.format(
+					"For correct proportions, author the image to your map's extents:\n"
+					"    %d x %d cells.",
+					pMap->getXExtent(), pMap->getYExtent());
+				hint.concat(dims);
+			}
+
+			AfxMessageBox(hint.str(), MB_ICONINFORMATION | MB_OK);
 			g_alreadyHintedTraceOverlay = true;
 		}
-		
-		CFileFind finder;
-		BOOL fileExists = finder.FindFile("data\\editor\\trace_overlay.dds");
-		if (!fileExists)
+
+		AsciiString overlayPath = DrawObject::resolveTracingOverlayPath();
+		if (overlayPath.isEmpty())
 		{
-			AfxMessageBox(
+			// PNG can be any size, so it gets this map's exact extents; DDS wants
+			// power-of-two, so it gets those extents rounded up.
+			AsciiString pngSuffix;
+			AsciiString ddsSuffix;
+			Int pngW, pngH, ddsW, ddsH;
+			if (DrawObject::getTracingOverlayRecommendedSize(pngW, pngH, ddsW, ddsH)) {
+				pngSuffix.format("   (recommended %d x %d)", pngW, pngH);
+				ddsSuffix.format("   (recommended %d x %d, power of two)", ddsW, ddsH);
+			}
+
+			AsciiString msg;
+			msg.format(
 				"Missing texture:\n\n"
-				"data\\editor\\trace_overlay.dds\n\n"
-				"The tracing overlay will not be displayed until this texture is restored.\n\n"
-				"You little shit, did you not install the worldbuilder properly? the texture file was supposed to be on the zip file - did you delete it?.",
-				MB_ICONERROR | MB_OK
-			);
+				"    %s.png%s\n"
+				"    %s.dds%s\n\n"
+				"The tracing overlay will not be displayed until a PNG or DDS file "
+				"with one of these names is present.",
+				base.str(), pngSuffix.str(), base.str(), ddsSuffix.str());
+
+			AfxMessageBox(msg.str(), MB_ICONERROR | MB_OK);
 
 			m_showTracingOverlay = 0;
 
 		}
+
+		// A texture exists and the overlay is on -- open the modeless settings
+		// dialog. It stays up and applies opacity / interpolation live (on the
+		// fly) as the user drags the slider or changes the combo.
+		if (m_showTracingOverlay)
+		{
+			TracingOverlayOptions::showDialog(this);
+		}
+	}
+	else
+	{
+		// Overlay turned off -- close the settings dialog if it is open.
+		TracingOverlayOptions::closeDialog();
 	}
 
 	::AfxGetApp()->WriteProfileInt(MAIN_FRAME_SECTION, "ShowTracingOverlay", m_showTracingOverlay ? 1 : 0);

@@ -57,6 +57,7 @@
 #include "RampTool.h"
 #include "ScorchTool.h"
 #include "RulerTool.h"
+#include "WaveEditorTool.h"
 #include "Common/Debug.h"
 
 /////////////////////////////////////////////////////////////////////////////
@@ -100,7 +101,7 @@ public:
 
 protected:
 
-	enum {NUM_VIEW_TOOLS=25};
+	enum {NUM_VIEW_TOOLS=26};
 
 	Tool							*m_tools[NUM_VIEW_TOOLS]; ///< array of tool pointers.
 	Tool							*m_curTool;   ///< Currently active tool.
@@ -130,6 +131,7 @@ protected:
 	ScorchTool				m_scorchTool;				///< Scorch tool.
 	BorderTool				m_borderTool;				///< Border tool.
 	RulerTool					m_rulerTool;				///< Ruler tool.
+	WaveEditorTool		m_waveEditorTool;		///< Wave editor tool.
 
 	Int								m_lockCurTool;
 
@@ -170,6 +172,10 @@ public:
 
 	AsciiString getCurrentGameDirectory() { return m_gameDirectory; }
 	Tool *getCurTool() { return m_curTool; }
+	/// The tool chosen in the palette (ignores transient Space/Alt/Ctrl swaps that retarget m_curTool).
+	Tool *getSelTool() { return m_selTool; }
+	/// The persistent wave-editor tool instance, so the render path can tell if it's the selected tool.
+	WaveEditorTool *getWaveEditorTool() { return &m_waveEditorTool; }
 
 	/// Check to see if any keyboard overrides are changing the current tool.
 	void updateCurTool(Bool forceHand);
