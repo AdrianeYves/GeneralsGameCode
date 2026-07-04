@@ -22,7 +22,7 @@ WBQtObjectPropsPanel::WBQtObjectPropsPanel(QWidget *owner)
 	  m_updating(false)
 {
 	setWindowTitle("Object Properties");
-	resize(340, 520);
+	resize(300, 520);	// == the MFC IDD_MAPOBJECT_PROPS width (200 DLU ~= 300px)
 
 	QVBoxLayout *root = new QVBoxLayout(this);
 
@@ -43,6 +43,10 @@ WBQtObjectPropsPanel::WBQtObjectPropsPanel(QWidget *owner)
 	QHBoxLayout *teamRow = new QHBoxLayout();
 	teamRow->addWidget(new QLabel("Team:", m_generalBox));
 	m_team = new QComboBox(m_generalBox);
+	// Don't let a long team name dictate the panel width (== the MFC combo, which stays
+	// fixed and elides). The dropdown popup can still be wide.
+	m_team->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+	m_team->setMinimumContentsLength(12);
 	teamRow->addWidget(m_team, 1);
 	genLay->addLayout(teamRow);
 
@@ -193,6 +197,10 @@ WBQtObjectPropsPanel::WBQtObjectPropsPanel(QWidget *owner)
 
 	sndGrid->addWidget(new QLabel("Attached Sound:", m_soundBox), 0, 0);
 	m_sound = new QComboBox(m_soundBox);
+	// The sound list holds hundreds of long names; without this it forces the whole panel
+	// far wider than the MFC dialog. Cap the field width; the popup can still be wide.
+	m_sound->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+	m_sound->setMinimumContentsLength(12);
 	sndGrid->addWidget(m_sound, 0, 1);
 	m_listen = new QPushButton("Listen", m_soundBox);
 	sndGrid->addWidget(m_listen, 0, 2);
