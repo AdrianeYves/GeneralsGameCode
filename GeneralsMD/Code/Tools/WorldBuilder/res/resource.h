@@ -17,7 +17,7 @@
 */
 
 //{{NO_DEPENDENCIES}}
-// Microsoft Visual C++ generated include file.
+// Microsoft Developer Studio generated include file.
 // Used by WorldBuilder.rc
 //
 #define IDPREVIEWSOUND                  3
@@ -45,7 +45,6 @@
 #define IDD_OBJECT_OPTIONS              145
 #define IDC_EYEDROPPER                  146
 #define IDD_CONTOUR_OPTIONS             146
-#define IDD_TRACING_OVERLAY_OPTIONS     246
 #define IDC_PLACE_OBJECT                147
 #define IDD_TERRAIN_MODAL               147
 #define IDC_POINTER                     148
@@ -151,6 +150,7 @@
 #define IDD_WAVE_EDITOR_OPTIONS         244
 #define IDC_OBJECT_SEARCH_BUTTON        244
 #define IDC_OBJECT_SEARCH_RESET_BTN     245
+#define IDD_TRACING_OVERLAY_OPTIONS     246
 #define IDC_OBJECT_EDIT                 246
 #define IDC_SEARCH_EDIT                 247
 #define IDC_FIND_BUTTON                 248
@@ -215,9 +215,6 @@
 #define IDC_SIZE_POPUP2                 1024
 #define IDC_SLIDER1                     1025
 #define IDC_SHOW_CONTOURS               1026
-#define IDC_TRACE_OPACITY_SLIDER        1383
-#define IDC_TRACE_OPACITY_LABEL         1384
-#define IDC_TRACE_FILTER_COMBO          1385
 #define IDC_OBJECT_HEIGHT_EDIT          1027
 #define IDC_ROAD_NAME                   1028
 #define IDC_ROAD_TREEVIEW               1029
@@ -630,14 +627,6 @@
 #define IDC_CHECK_RULER                 1328
 #define IDC_SIDES                       1329
 #define IDC_RULER_WIDTH                 1330
-#define IDC_RULER_USE_METERS            1388
-#define IDC_RULER_SHOW_GRID             1389
-#define IDC_WAVE_MODE_PAINT             1390
-#define IDC_WAVE_SHOW_SHORELINE         1391
-#define IDC_WAVE_MODE_BUCKET            1398
-#define IDC_WAVE_BRUSH_SIZE             1399
-#define IDC_WAVE_BRUSH_SIZE_LABEL       1400
-#define IDC_WAVE_DELETE_ALL             1401
 #define IDC_UPDATE_TEAM_MEMBERS         1331
 #define IDC_USE_TEAM_DEFAULTS           1332
 #define IDC_LOOPING_CHECKBOX            1333
@@ -645,7 +634,6 @@
 #define IDC_CUSTOMIZE_CHECKBOX          1335
 #define IDC_MAPOBJECT_Scale             1336
 #define IDC_SOUND_COMBO                 1346
-#define IDC_PLAY_SOUND_BUTTON           1392
 #define IDC_LOOPCOUNT_EDIT              1347
 #define IDC_MIN_VOLUME_EDIT             1348
 #define IDC_PRIORITY_COMBO              1349
@@ -674,8 +662,6 @@
 #define IDC_DIALOG_FONT                 1371
 #define IDC_TOGGLE_MIRRORY              1372
 #define IDC_DIALOG_FONT_LABEL           1372
-#define IDC_VIEWPORT_RESOLUTION         1386
-#define IDC_VIEWPORT_RESOLUTION_LABEL   1387
 #define IDC_WAVE_TYPE_LABEL             1373
 #define IDC_TOGGLE_MIRROR               1373
 #define IDC_WAVE_CYCLE_TYPE             1374
@@ -694,21 +680,35 @@
 #define IDC_STATIC_MAPOBJECT_SOUND      1381
 #define IDC_WAVE_SHOW_LINES             1382
 #define IDC_STATIC_MAPOBJECT_VISUAL     1382
+#define IDC_TRACE_OPACITY_SLIDER        1383
 #define IDC_MAPOBJECT_DISTANCE          1383
+#define IDC_TRACE_OPACITY_LABEL         1384
 #define IDC_HELP_CAPTION                1384
+#define IDC_TRACE_FILTER_COMBO          1385
 #define IDC_HELP_TEXT                   1385
+#define IDC_VIEWPORT_RESOLUTION         1386
 #define ID_FILE_JUMPTOGAME_WD           1386
+#define IDC_VIEWPORT_RESOLUTION_LABEL   1387
 #define IDC_FENCE_ONLY                  1387
+#define IDC_RULER_USE_METERS            1388
 #define ID_FILE_JUMPTOFOLDER            1388
+#define IDC_RULER_SHOW_GRID             1389
 #define ID_FILE_WBSETTINGS              1389
+#define IDC_WAVE_MODE_PAINT             1390
 #define ID_FILE_GENERATE_MAPSTRNINI     1390
+#define IDC_WAVE_SHOW_SHORELINE         1391
 #define ID_VIEW_SHOWSUBDRAW             1391
+#define IDC_PLAY_SOUND_BUTTON           1392
 #define ID_DISABLEMAPPREVGENERATE       1392
 #define ID_FILE_AUTOSAVEFOLDER          1393
 #define ID_FILE_GAMEFOLDER              1394
 #define ID_FILE_GAMEFOLDERDATA          1395
 #define ID_VIEW_SHOWBASERADIUS          1396
 #define ID_FILE_JUMPTOFOLDERDATA        1397
+#define IDC_WAVE_MODE_BUCKET            1398
+#define IDC_WAVE_BRUSH_SIZE             1399
+#define IDC_WAVE_BRUSH_SIZE_LABEL       1400
+#define IDC_WAVE_DELETE_ALL             1401
 #define ID_BRUSH_TOOL                   32771
 #define IDM_ShowGrid                    32772
 #define ID_FEATHERTOOL                  32791

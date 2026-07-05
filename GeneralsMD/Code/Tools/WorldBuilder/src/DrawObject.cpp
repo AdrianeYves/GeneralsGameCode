@@ -3658,58 +3658,6 @@ if (_skip_drawobject_render) {
 		}
 	}
 
-	// Draw the wave overlay only while the wave editor is the active tool -- this gate
-	// takes priority over the View toggle, so the cyan/yellow glyphs don't linger over
-	// the map when you're working with another tool. Within an active editor the "Show
-	// wave lines" toggle (m_waveFeedback) fully controls the cyan overlay, INCLUDING the
-	// hover/drag ghost glyph: unchecking it hides every overlay line. The live animated
-	// preview wave is drawn separately by the water-track system, so you still see what
-	// you're placing. When the editor isn't active we also skip the updateWaveVB() cost.
-	if (WaveEditorTool::isEditorActive() && m_waveFeedback) {
-		updateWaveVB();
-		if (m_feedbackIndexCount > 0) {
-			// Wave overlay should always be visible, so disable depth test/write -
-			// the lines draw on top of terrain, trees, objects, etc. (editor aid).
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, FALSE);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE, FALSE);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHABLENDENABLE, FALSE);
-
-			DX8Wrapper::Set_Vertex_Buffer(m_vertexFeedback);
-			DX8Wrapper::Set_Index_Buffer(m_indexFeedback,0);
-			DX8Wrapper::Set_Shader(m_shaderClass);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_CULLMODE, D3DCULL_NONE);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_FILLMODE,D3DFILL_SOLID);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_LIGHTING, FALSE);
-			DX8Wrapper::Draw_Triangles(	0, m_feedbackIndexCount/3, 0,	m_feedbackVertexCount);
-
-			// restore depth testing for anything drawn after us.
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, TRUE);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE, TRUE);
-		}
-	}
-
-	// Red shoreline guide: trace the water/land boundary while the wave editor is the
-	// active tool and the "Show shoreline" toggle is on, so users can see where to paint.
-	// Drawn depth-disabled (like the wave overlay) so it's always visible on top.
-	if (WaveEditorTool::isEditorActive() && m_showShoreline) {
-		updateShorelineVB();
-		if (m_feedbackIndexCount > 0) {
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, FALSE);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE, FALSE);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHABLENDENABLE, FALSE);
-
-			DX8Wrapper::Set_Vertex_Buffer(m_vertexFeedback);
-			DX8Wrapper::Set_Index_Buffer(m_indexFeedback, 0);
-			DX8Wrapper::Set_Shader(m_shaderClass);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_CULLMODE, D3DCULL_NONE);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_FILLMODE, D3DFILL_SOLID);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_LIGHTING, FALSE);
-			DX8Wrapper::Draw_Triangles(0, m_feedbackIndexCount / 3, 0, m_feedbackVertexCount);
-
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, TRUE);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE, TRUE);
-		}
-	}
 
 #if 1
 	if (m_rampFeedback) {
@@ -3960,11 +3908,82 @@ if (_skip_drawobject_render) {
 		}
 	}
 
-  DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
+    DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
  	DX8Wrapper::Set_Vertex_Buffer(m_vertexBufferWater);
 
 	if (m_waterDrawObject && m_showWater) {
 		m_waterDrawObject->renderWater();
+	}
+
+	if (TheWaterTracksRenderSystem) {
+		Bool savedSoftWater = TheGlobalData->m_showSoftWaterEdge;
+		TheWritableGlobalData->m_showSoftWaterEdge = true;
+
+		// renderWater()/shroud passes and the overlay code elsewhere in this function
+		// poke render states directly (bypassing Set_Shader), which can desync
+		// ShaderClass's own "current shader" cache and cause Set_Shader() to skip
+		// re-applying blend state. Force both caches to resync before/after tracks
+		// draw so the alpha-blended fade actually takes effect.
+		DX8Wrapper::Invalidate_Cached_Render_States();
+		ShaderClass::Invalidate();
+
+		TheWaterTracksRenderSystem->flush(rinfo);
+		TheWritableGlobalData->m_showSoftWaterEdge = savedSoftWater;
+	}
+
+// Draw the wave overlay only while the wave editor is the active tool -- this gate
+	// takes priority over the View toggle, so the cyan/yellow glyphs don't linger over
+	// the map when you're working with another tool. Within an active editor the "Show
+	// wave lines" toggle (m_waveFeedback) fully controls the cyan overlay, INCLUDING the
+	// hover/drag ghost glyph: unchecking it hides every overlay line. The live animated
+	// preview wave is drawn separately by the water-track system, so you still see what
+	// you're placing. When the editor isn't active we also skip the updateWaveVB() cost.
+	if (WaveEditorTool::isEditorActive() && m_waveFeedback) {
+		updateWaveVB();
+		if (m_feedbackIndexCount > 0) {
+			// Wave overlay should always be visible, so disable depth test/write -
+			// the lines draw on top of terrain, trees, objects, etc. (editor aid).
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, FALSE);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE, FALSE);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHABLENDENABLE, FALSE);
+
+			DX8Wrapper::Set_Texture(0, NULL);          // Stops the texture from being applied to the lines
+			DX8Wrapper::Set_Vertex_Buffer(m_vertexFeedback);
+			DX8Wrapper::Set_Index_Buffer(m_indexFeedback,0);
+			DX8Wrapper::Set_Shader(m_shaderClass);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_CULLMODE, D3DCULL_NONE);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_FILLMODE,D3DFILL_SOLID);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_LIGHTING, FALSE);
+			DX8Wrapper::Draw_Triangles(	0, m_feedbackIndexCount/3, 0,	m_feedbackVertexCount);
+
+			// restore depth testing for anything drawn after us.
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, TRUE);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE, TRUE);
+		}
+	}
+
+	// Red shoreline guide: trace the water/land boundary while the wave editor is the
+	// active tool and the "Show shoreline" toggle is on, so users can see where to paint.
+	// Drawn depth-disabled (like the wave overlay) so it's always visible on top.
+	if (WaveEditorTool::isEditorActive() && m_showShoreline) {
+		updateShorelineVB();
+		if (m_feedbackIndexCount > 0) {
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, FALSE);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE, FALSE);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHABLENDENABLE, FALSE);
+
+			DX8Wrapper::Set_Texture(0, NULL);          // Stops the texture from being applied to the lines
+			DX8Wrapper::Set_Vertex_Buffer(m_vertexFeedback);
+			DX8Wrapper::Set_Index_Buffer(m_indexFeedback, 0);
+			DX8Wrapper::Set_Shader(m_shaderClass);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_CULLMODE, D3DCULL_NONE);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_FILLMODE, D3DFILL_SOLID);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_LIGHTING, FALSE);
+			DX8Wrapper::Draw_Triangles(0, m_feedbackIndexCount / 3, 0, m_feedbackVertexCount);
+
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, TRUE);
+			DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE, TRUE);
+		}
 	}
 
 	if (m_drawLetterbox) {

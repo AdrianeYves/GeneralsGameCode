@@ -194,9 +194,7 @@ void WaveEditorTool::activate()
 	CWorldBuilderDoc *pDoc = CWorldBuilderDoc::GetActiveDoc();
 	CString curPath = pDoc ? pDoc->getMapPath() : CString();
 	if (!m_tracksLoaded || curPath != m_loadedMapPath) {
-		loadTracks(pDoc);
-		m_tracksLoaded  = true;
-		m_loadedMapPath = curPath;
+		loadTracks(pDoc, false, curPath);	// silent load, no message box
 	}
 }
 
@@ -1140,7 +1138,20 @@ void WaveEditorTool::saveTracks(CWorldBuilderDoc *pDoc)
 	}
 }
 
-void WaveEditorTool::loadTracks(CWorldBuilderDoc *pDoc, Bool announce)
+// Currently Bugged TODO: PLEASE FIX -- should have load the tracks after loading the map
+void WaveEditorTool::loadTracksInstant(CString mapPath, CWorldBuilderDoc *pDoc)
+{
+    ensureSystem();
+
+    CString curPath = mapPath;
+
+	DEBUG_LOG(("WaveEditorTool::loadTracksInstant: m_tracksLoaded=%d, curPath='%s', m_loadedMapPath='%s'\n",
+		m_tracksLoaded, (const char *)curPath, (const char *)m_loadedMapPath));
+    // if (!m_tracksLoaded || curPath != m_loadedMapPath)
+        loadTracks(pDoc, false, curPath);
+}
+
+void WaveEditorTool::loadTracks(CWorldBuilderDoc *pDoc, Bool announce, const char *curPath)
 {
 	char path[256];
 	if (!getWakPath(pDoc, path, sizeof(path))) {
@@ -1188,6 +1199,9 @@ void WaveEditorTool::loadTracks(CWorldBuilderDoc *pDoc, Bool announce)
 	WbView3d *p3View = CWorldBuilderDoc::GetActive3DView();
 	if (p3View)
 		p3View->Invalidate();
+
+	m_tracksLoaded  = true;
+	m_loadedMapPath = curPath;
 }
 
 //-----------------------------------------------------------------------------
@@ -1358,6 +1372,30 @@ void WaveEditorTool::endListSelection(Int anchorIndex)
 		: ((m_selCount > 0) ? m_selSet[m_selCount - 1] : -1);
 
 	centerCameraOnWave(m_selectedWave);
+
+	WbView3d *p3View = CWorldBuilderDoc::GetActive3DView();
+	if (p3View)
+		p3View->Invalidate();
+}
+
+//public
+void WaveEditorTool::ClearWavesForNewOpenedMap(void)
+{
+	// ::AfxMessageBox("firing ClearWavesForNewOpenedMap");
+	if (!TheWaterTracksRenderSystem)
+		return;
+
+	DEBUG_LOG(("test"));
+	// ::AfxMessageBox("deleting waves");
+	// Highest index down, same as deleteSelectedWave, so removal never reindexes a wave
+	// we still have to remove.
+	for (Int i = TheWaterTracksRenderSystem->getWaveCount() - 1; i >= 0; --i)
+		TheWaterTracksRenderSystem->removeWaveAt(i);
+
+	DEBUG_LOG(("boom"));
+	clearSelectionInternal();
+	m_selectedWave = -1;
+	m_undoTop = 0;	// stored undo indices are stale once waves are removed/reindexed
 
 	WbView3d *p3View = CWorldBuilderDoc::GetActive3DView();
 	if (p3View)

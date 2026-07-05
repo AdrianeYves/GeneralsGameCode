@@ -3007,13 +3007,13 @@ void WbView3d::render()
 		// editor's waves draw even with soft water off, without persisting the change or
 		// clobbering the user's setting. flush() internally calls update(), so no separate
 		// animation tick is needed.
-		if (TheWaterTracksRenderSystem && WaveEditorTool::isEditorActive()) {
-			Bool savedSoftWater = TheGlobalData->m_showSoftWaterEdge;
-			TheWritableGlobalData->m_showSoftWaterEdge = true;
-			RenderInfoClass rinfo(*m_camera);
-			TheWaterTracksRenderSystem->flush(rinfo);
-			TheWritableGlobalData->m_showSoftWaterEdge = savedSoftWater;
-		}
+		// if (TheWaterTracksRenderSystem) {
+		// 	Bool savedSoftWater = TheGlobalData->m_showSoftWaterEdge;
+		// 	TheWritableGlobalData->m_showSoftWaterEdge = true;
+		// 	RenderInfoClass rinfo(*m_camera);
+		// 	TheWaterTracksRenderSystem->flush(rinfo);
+		// 	TheWritableGlobalData->m_showSoftWaterEdge = savedSoftWater;
+		// }
 
 		// Draw the 3d obj icons on top of the rest of the data.
 		WW3D::Render(m_overlayScene,m_camera);	

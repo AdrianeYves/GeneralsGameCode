@@ -1141,7 +1141,7 @@ void TileTool::mouseMoved(TTrackingMode m, CPoint viewPt, WbView* pView, CWorldB
 		centers[centerCount++] = ndx; // always paint primary
 
 		if (BigTileTool::getEnableMirror()) {
-			DEBUG_LOG(("Mirror enabled: calculating mirrored centers...\n"));
+			// DEBUG_LOG(("Mirror enabled: calculating mirrored centers...\n"));
 			// Mirrored center indices
 			Int mx = (mapW - 1) - ndx.x; // X mirror
 			Int my = (mapH - 1) - ndx.y; // Y mirror

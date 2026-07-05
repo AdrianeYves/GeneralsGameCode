@@ -109,6 +109,8 @@ public:
 	virtual void mouseMoved(TTrackingMode m, CPoint viewPt, WbView* pView, CWorldBuilderDoc *pDoc);
 	virtual void mouseUp(TTrackingMode m, CPoint viewPt, WbView* pView, CWorldBuilderDoc *pDoc);
 	virtual Bool followsTerrain(void) {return false;};
+	static void ClearWavesForNewOpenedMap(void);
+	static void loadTracksInstant(CString mapPath, CWorldBuilderDoc *pDoc);
 
 	/// True when the wave editor is the SELECTED palette tool (ignores transient
 	/// Space/Alt/Ctrl tool swaps). The wave overlay + animated tracks gate on this so
@@ -141,7 +143,7 @@ public:
 	static void undoLast(void);
 	static Bool hasUndo(void);			///< true if there's a wave action to undo (for Ctrl+Z routing)
 	static void saveTracks(CWorldBuilderDoc *pDoc);
-	static void loadTracks(CWorldBuilderDoc *pDoc, Bool announce = false);
+	static void loadTracks(CWorldBuilderDoc *pDoc, Bool announce = false, const char *curPath = NULL);
 
 	// Wave list (driven by the options panel's list control).  Plain-typed so the
 	// MFC panel never has to include the W3D water header.

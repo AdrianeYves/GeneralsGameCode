@@ -1718,11 +1718,13 @@ void CWorldBuilderDoc::OnEditUndo()
 	// undo that wave action instead of the map undo.  We key off hasUndo() rather
 	// than the active tool: holding Ctrl can transiently flip the current tool to the
 	// pointer, which would otherwise make the check miss.
-	if (WaveEditorTool::hasUndo())
-	{
-		WaveEditorTool::undoLast();
-		return;
-	}
+	// Currently the wave editor undo sometimes bugged out the undo logic of the original
+	// TODO: check and fix
+	// if (WaveEditorTool::hasUndo())
+	// {
+	// 	WaveEditorTool::undoLast();
+	// 	return;
+	// }
 
 	Undoable *pUndo = m_undoList;
 	m_needAutosave = true;
@@ -2030,6 +2032,10 @@ BOOL CWorldBuilderDoc::OnNewDocument()
 	WbApp()->selectPointerTool();
 	PolygonTrigger::deleteTriggers();
 
+	WaveEditorTool::ClearWavesForNewOpenedMap();
+	WaveEditorOptions::refresh();
+	// WaveEditorTool::loadTracksInstant(); // theres nothing to load  here lol its a new map
+
 	// Make sure that all the old units are removed from the list.
 	// Bug fix by MLL 1/14/03
 	TheLayersList->enableUpdates();
@@ -2285,6 +2291,22 @@ BOOL CWorldBuilderDoc::OnOpenDocument(LPCTSTR lpszPathName)
 	if (CMainFrame::GetMainFrame() && CMainFrame::GetMainFrame()->getScriptDialog()) {
 		CMainFrame::GetMainFrame()->closeScriptDialog();
 	}
+
+	CString fullPath = lpszPathName;
+	WaveEditorTool::ClearWavesForNewOpenedMap();
+	WaveEditorOptions::refresh();
+// 	WaveEditorTool::loadTracksInstant(fullPath, this);
+
+// 	if (WbView3d *p3View = Get3DView()) {
+//     p3View->Invalidate(FALSE);
+//     p3View->UpdateWindow();
+// }
+	
+	// if(WaveEditorTool::isEditorActive())
+	// {
+	// WaveEditorOptions::refresh();
+	// }
+
 
 	// WbApp()->OnRefreshAppAbout();
 	// DEBUG_LOG(("strTitle=%s strPathName=%s\n", lpszPathName, m_strPathName));
