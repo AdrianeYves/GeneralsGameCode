@@ -38,6 +38,7 @@
 #include "ScriptDialog.h"
 #define ADJUST_VIEW_TIMER 6969
 #define COUNTDOWN_TIMER 6910
+#include "MinimapDialog.h"
 
 #include <mmsystem.h>
 #pragma comment(lib, "winmm.lib")
@@ -813,5 +814,8 @@ void CMainFrame::OnEditCameraoptions()
 void CMainFrame::handleCameraChange(void)
 {
 	m_cameraOptions.update();
+
+	if (TheMinimapDialog && TheMinimapDialog->IsWindowVisible())
+		TheMinimapDialog->updateViewBoxOverlay();
 }
 

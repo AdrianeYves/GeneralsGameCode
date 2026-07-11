@@ -57,6 +57,8 @@ public:
 	void setResolution(Int res);		///< Clamped to [MINIMAP_RES_MIN, MINIMAP_RES_MAX].
 	Int  getResolution() const { return m_resolution; }
 
+	void  updateViewBoxOverlay();
+
 protected:
 	virtual BOOL OnInitDialog();
 	virtual void OnCancel();
@@ -74,8 +76,13 @@ protected:
 private:
 	void interpolateColorForHeight(RGBColor *color, Real height,
 		Real hiZ, Real midZ, Real loZ);
+	CRect m_lastViewBoxRect;   // client-space bounds of the view box as last drawn
+	void  drawViewBoxOverlay(HDC hdc, Int clientW, Int clientH, CRect *outBounds = NULL);
 	Bool minimapToWorld(Int mx, Int my, Real *worldX, Real *worldY);
 	void centerViewAtClient(CPoint point);
+	void fillStar(Int cx, Int cy, Int size, UnsignedInt color, Int points);
+	void fillCircle(Int cx, Int cy, Int size, UnsignedInt color);
+	void fillBorderedStar(Int cx, Int cy, Int size, Int borderPx, Int points);
 	void allocBuffer();				///< (Re)allocate the buffers for the current resolution.
 	void drawObjects();				///< Overlay map objects (units/structures) onto the buffer.
 	void fillRect(Int cx, Int cy, Int w, Int h, UnsignedInt color);	///< centered, clipped buffer fill.

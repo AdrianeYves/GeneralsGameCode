@@ -113,7 +113,7 @@ void WaveEditorOptions::populateList(void)
 	// any rows that are no longer selected.
 	Int rows = pList->GetItemCount();
 	for (Int b = 0; b < rows; ++b) {
-		Bool on = WaveEditorTool::isWaveSelected(i);
+		Bool on = WaveEditorTool::isWaveSelected(b);
 		pList->SetItemState(b, on ? LVIS_SELECTED : 0, LVIS_SELECTED);
 	}
 	Int anchor = WaveEditorTool::getSelectedWave();
