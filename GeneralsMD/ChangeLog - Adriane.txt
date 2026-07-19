@@ -482,3 +482,32 @@ XXX
 
 == System ==
 - Removed cancel on the toast dialog
+
+7/19/2026 -- The ERA of change and death of cleanliness (from tria branch at least lol)
+Beyond this, most features are taken/ported from tria's ai prompted edit
+======================================================
+== System ==
+- New Splash animation
+- Maps under .big file can now be opened without a big extractor
+- Waypoint tool crash bug fix 
+- killing of old eula agreement 
+- New text rendering logic
+- New MSAA and texture filtering options
+- Better map.ini loading logic
+- [ and ] can now increase the size of the brush tool
+- water mesh animation now capped to 30 fps
+
+== Wave Editor (New) ==
+- Edit waves directly from the worldbuilder
+
+== Ruler Tool == 
+- Show on meters button
+
+== Texture Overlay ==
+- Now supports png Files
+
+== Object Options ==
+- Preview Button for SFX
+
+== Minimap (New) == 
+- New dialog screen similar ingame

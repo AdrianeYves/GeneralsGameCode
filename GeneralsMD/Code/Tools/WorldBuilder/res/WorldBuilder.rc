@@ -27,18 +27,18 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 // TEXTINCLUDE
 //
 
-1 TEXTINCLUDE DISCARDABLE 
+1 TEXTINCLUDE MOVEABLE PURE 
 BEGIN
     "resource.h\0"
 END
 
-2 TEXTINCLUDE DISCARDABLE 
+2 TEXTINCLUDE MOVEABLE PURE 
 BEGIN
     "#include ""afxres.h""\r\n"
     "\0"
 END
 
-3 TEXTINCLUDE DISCARDABLE 
+3 TEXTINCLUDE MOVEABLE PURE 
 BEGIN
     "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
     "#define _AFX_NO_OLE_RESOURCES\r\n"
@@ -78,23 +78,23 @@ IDI_Hide                ICON    DISCARDABLE     "IDI_Hide.ico"
 //
 
 IDR_MAINFRAME           BITMAP  MOVEABLE PURE   "Toolbar.bmp"
-IDR_TOOLBAR1            BITMAP  DISCARDABLE     "toolbar1.bmp"
-IDR_TOOLBAR2            BITMAP  DISCARDABLE     "toolbar2.bmp"
-IDB_DownArrow           BITMAP  DISCARDABLE     "IDB_DownArrow.bmp"
-IDB_FOLDER              BITMAP  DISCARDABLE     "folder.bmp"
-IDB_ROAD_CORNERS        BITMAP  DISCARDABLE     "IDB_ROAD_CORNERS.bmp"
-IDB_FOLDERSCRIPT        BITMAP  DISCARDABLE     "foldersc.bmp"
-IDB_FOLDERSCRIPTB       BITMAP  DISCARDABLE     "foldersb.bmp"
-IDB_WORLDBUILDERSPLASH  BITMAP  DISCARDABLE     "WorldBuilder.bmp"
-28727                   BITMAP  DISCARDABLE     "bmp28727.bmp"
-IDB_PHLOGO              BITMAP  DISCARDABLE     "ph.bmp"
+IDR_TOOLBAR1            BITMAP  MOVEABLE PURE   "toolbar1.bmp"
+IDR_TOOLBAR2            BITMAP  MOVEABLE PURE   "toolbar2.bmp"
+IDB_DownArrow           BITMAP  MOVEABLE PURE   "IDB_DownArrow.bmp"
+IDB_FOLDER              BITMAP  MOVEABLE PURE   "folder.bmp"
+IDB_ROAD_CORNERS        BITMAP  MOVEABLE PURE   "IDB_ROAD_CORNERS.bmp"
+IDB_FOLDERSCRIPT        BITMAP  MOVEABLE PURE   "foldersc.bmp"
+IDB_FOLDERSCRIPTB       BITMAP  MOVEABLE PURE   "foldersb.bmp"
+IDB_WORLDBUILDERSPLASH  BITMAP  MOVEABLE PURE   "WorldBuilder.bmp"
+28727                   BITMAP  MOVEABLE PURE   "bmp28727.bmp"
+IDB_PHLOGO              BITMAP  MOVEABLE PURE   "ph.bmp"
 
 /////////////////////////////////////////////////////////////////////////////
 //
 // Toolbar
 //
 
-IDR_MAINFRAME TOOLBAR DISCARDABLE  16, 15
+IDR_MAINFRAME TOOLBAR MOVEABLE PURE  16, 15
 BEGIN
     BUTTON      ID_FILE_NEW
     BUTTON      ID_FILE_OPEN
@@ -113,6 +113,7 @@ BEGIN
     BUTTON      ID_MOLD_TOOL
     SEPARATOR
     BUTTON      ID_WATER_TOOL
+    BUTTON      ID_WAVE_EDITOR_TOOL
     SEPARATOR
     BUTTON      ID_TILE_TOOL
     BUTTON      ID_BIG_TILE_TOOL
@@ -140,14 +141,15 @@ BEGIN
     BUTTON      ID_VIEW_LAYERS_LIST
     BUTTON      ID_EDIT_CAMERAOPTIONS
     BUTTON      ID_EDIT_MAPSETTINGS
+    BUTTON      ID_VIEW_MINIMAP
 END
 
-IDR_TOOLBAR1 TOOLBAR DISCARDABLE  20, 80
+IDR_TOOLBAR1 TOOLBAR MOVEABLE PURE  20, 80
 BEGIN
     BUTTON      ID_SLIDER
 END
 
-IDR_TOOLBAR2 TOOLBAR DISCARDABLE  16, 15
+IDR_TOOLBAR2 TOOLBAR MOVEABLE PURE  16, 15
 BEGIN
     BUTTON      ID_BRUSH_TOOL
     BUTTON      ID_FEATHERTOOL
@@ -177,7 +179,7 @@ END
 // Menu
 //
 
-IDR_MAPDOC MENU PRELOAD DISCARDABLE 
+IDR_MAPDOC MENU DISCARDABLE 
 BEGIN
     POPUP "&File"
     BEGIN
@@ -278,6 +280,7 @@ BEGIN
         MENUITEM "Show Weapon Ranges\tAlt+8",   ID_VIEW_WEAPONRANGES
         MENUITEM "Show Garrisoned",             ID_VIEW_GARRISONED
         MENUITEM "Show Map Boundaries\tAlt+9",  ID_VIEW_SHOWMAPBOUNDARIES
+        MENUITEM "Show Wave Lines",             ID_VIEW_SHOWWAVELINES
         MENUITEM "Show Ruler Grid\tCtrl+Q",     ID_VIEW_RULERGRID
         MENUITEM SEPARATOR
         MENUITEM "Use Fixed Colored Waypoints \tAlt+0", 
@@ -296,6 +299,9 @@ BEGIN
                                                 ID_VIEW_SHOWIMPASSABLEAREAS
         MENUITEM SEPARATOR
         MENUITEM "Show Wireframe 3D View\tCtrl+W", ID_VIEW_SHOWWIREFRAME
+        MENUITEM "Show Full Wireframe",         ID_VIEW_SHOWFULLWIREFRAME
+        MENUITEM "Show Object Selection Overlay", 
+                                                ID_VIEW_SHOWSELECTIONOVERLAY
         MENUITEM "Show From Top Down View\tCtrl+F", ID_VIEW_SHOWTOPDOWNVIEW
         MENUITEM "Show 3-Way Blends in White",  ID_VIEW_SHOWEXTRABLENDS
         MENUITEM "Show Clouds\tCtrl+U",         ID_VIEW_SHOWCLOUDS
@@ -310,46 +316,51 @@ BEGIN
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "Layers List",                 ID_VIEW_LAYERS_LIST
         MENUITEM "Minimap",                     ID_VIEW_MINIMAP
+        MENUITEM "Minimap",                     ID_VIEW_MINIMAP
         MENUITEM SEPARATOR
     END
     POPUP "&Level Of Detail"
     BEGIN
         MENUITEM "Save My Potato!",             ID_LOD_MODE_1
         MENUITEM "My shit is average",          ID_LOD_MODE_2
-        MENUITEM "Lets lag the whole worldbuilder | NASA PC Required!",
+        MENUITEM "Lets lag the whole worldbuilder | NASA PC Required!", 
                                                 ID_LOD_MODE_3
         MENUITEM SEPARATOR
         POPUP "MSAA"
         BEGIN
-            MENUITEM "Off",                     ID_MSAA_NONE
-            MENUITEM "2x",                      ID_MSAA_2X
-            MENUITEM "4x",                      ID_MSAA_4X
-            MENUITEM "8x",                      ID_MSAA_8X
+            MENUITEM "Off",                         ID_MSAA_NONE
+            MENUITEM "2x",                          ID_MSAA_2X
+            MENUITEM "4x",                          ID_MSAA_4X
+            MENUITEM "8x",                          ID_MSAA_8X
         END
         POPUP "Texture Filtering"
         BEGIN
-            MENUITEM "Default",                 ID_TEXFILTER_DEFAULT
-            MENUITEM "Anisotropic 16x",         ID_TEXFILTER_ANISO16X
+            MENUITEM "Default",                     ID_TEXFILTER_DEFAULT
+            MENUITEM "Anisotropic 16x",             ID_TEXFILTER_ANISO16X
         END
         POPUP "Minimap"
         BEGIN
-            MENUITEM "Show Objects",            ID_MINIMAP_SHOWOBJECTS
+            MENUITEM "Show Objects",                ID_MINIMAP_SHOWOBJECTS
             POPUP "Refresh Rate"
             BEGIN
-                MENUITEM "Off (manual)",        ID_MINIMAP_REFRESH_OFF
-                MENUITEM "Fast (100 ms)",       ID_MINIMAP_REFRESH_100
-                MENUITEM "Normal (250 ms)",     ID_MINIMAP_REFRESH_250
-                MENUITEM "Slow (1000 ms)",      ID_MINIMAP_REFRESH_1000
+                MENUITEM "Off (manual)",                ID_MINIMAP_REFRESH_OFF
+
+                MENUITEM "Fast (100 ms)",               ID_MINIMAP_REFRESH_100
+
+                MENUITEM "Normal (250 ms)",             ID_MINIMAP_REFRESH_250
+
+                MENUITEM "Slow (1000 ms)",              ID_MINIMAP_REFRESH_1000
+
             END
             POPUP "Resolution"
             BEGIN
-                MENUITEM "128 x 128",           ID_MINIMAP_RES_128
-                MENUITEM "256 x 256",           ID_MINIMAP_RES_256
-                MENUITEM "512 x 512",           ID_MINIMAP_RES_512
-                MENUITEM "2048 x 2048 (slow)",  ID_MINIMAP_RES_2048
+                MENUITEM "128 x 128",                   ID_MINIMAP_RES_128
+                MENUITEM "256 x 256",                   ID_MINIMAP_RES_256
+                MENUITEM "512 x 512",                   ID_MINIMAP_RES_512
+                MENUITEM "2048 x 2048 (slow)",          ID_MINIMAP_RES_2048
             END
         END
-        MENUITEM "Text Shadow",             ID_TEXT_SHADOW
+        MENUITEM "Text Shadow",                 ID_TEXT_SHADOW
         MENUITEM SEPARATOR
         MENUITEM "Show All of 3d Map\tCtrl+A",  ID_VIEW_SHOWENTIRE3DMAP
         POPUP "Partial Map Size"
@@ -363,6 +374,10 @@ BEGIN
             MENUITEM "192x192",                     ID_VIEW_PARTIALMAPSIZE_192X192
 
         END
+    END
+    POPUP "Text Rendering"
+    BEGIN
+        MENUITEM "Shadow",                      ID_TEXT_SHADOW
     END
     POPUP "&Window"
     BEGIN
@@ -411,6 +426,7 @@ BEGIN
         MENUITEM "Mesh Mold\tT",                ID_MOLD_TOOL
         MENUITEM SEPARATOR
         MENUITEM "Water\tY",                    ID_WATER_TOOL
+        MENUITEM "Wave Editor",                 ID_WAVE_EDITOR_TOOL
         MENUITEM SEPARATOR
         MENUITEM "Single Tile\tA",              ID_TILE_TOOL
         MENUITEM "Large Tile\tS",               ID_BIG_TILE_TOOL
@@ -478,7 +494,7 @@ END
 // Accelerator
 //
 
-IDR_MAINFRAME ACCELERATORS PRELOAD MOVEABLE PURE 
+IDR_MAINFRAME ACCELERATORS MOVEABLE PURE 
 BEGIN
     "0",            ID_EDIT_PICKANYTHING,   VIRTKEY, CONTROL, NOINVERT
     "1",            ID_EDIT_PICKSTRUCTS,    VIRTKEY, CONTROL, NOINVERT
@@ -569,10 +585,10 @@ END
 // Dialog
 //
 
-IDD_ABOUTBOX DIALOGEX 0, 0, 456, 192
+IDD_ABOUTBOX DIALOGEX 0, 0, 456, 248
 STYLE WS_MINIMIZEBOX | WS_CAPTION | WS_SYSMENU
 CAPTION "Help / Entity Finder / Shortcut Finder"
-FONT 8, "MS Sans Serif", 0, 0, 0x1
+FONT 8, "Tahoma", 0, 0, 0x1
 BEGIN
     LTEXT           "Adriane [ Deathscythe ] Community Worldbuilder V3.0",
                     IDC_STATIC,4,3,216,11,SS_NOPREFIX | SS_CENTERIMAGE | 
@@ -589,7 +605,16 @@ BEGIN
     LTEXT           "Kabuse [Hotkey layout] | Gramantio | Veloxious | Muska | Vite | Sgtmyers | WWB2 | BKR | Emil",
                     IDC_STATIC,62,52,152,31
     CONTROL         "Launch this window on app startup",IDC_LAUNCH_ONSTARTUP,
-                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,173,147,14
+                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,229,147,14
+    GROUPBOX        "Visual Settings:",IDC_STATIC,4,172,216,53
+    COMBOBOX        IDC_DIALOG_FONT,15,185,90,90,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "(applies on restart)",IDC_DIALOG_FONT_LABEL,110,187,104,
+                    11,SS_CENTERIMAGE
+    COMBOBOX        IDC_VIEWPORT_RESOLUTION,15,203,90,200,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Viewport resolution",IDC_VIEWPORT_RESOLUTION_LABEL,110,
+                    205,104,11,SS_CENTERIMAGE
     COMBOBOX        IDC_FIND_QUERY_OBJ,15,116,135,329,CBS_DROPDOWN | 
                     CBS_SORT | WS_VSCROLL | WS_TABSTOP
     PUSHBUTTON      "Find",IDC_FIND_OBJ_BUTTON,153,115,22,14
@@ -604,8 +629,8 @@ BEGIN
                     WS_EX_DLGMODALFRAME
     CONTROL         251,IDC_STATIC,"Static",SS_BITMAP,4,16,46,23,
                     WS_EX_DLGMODALFRAME
-    PUSHBUTTON      "Hotkey List >>",IDC_EXPAND,159,173,61,14
-    PUSHBUTTON      "<< SHRINK",IDC_SHRINK,391,173,61,14
+    PUSHBUTTON      "Hotkey List >>",IDC_EXPAND,159,229,61,14
+    PUSHBUTTON      "<< SHRINK",IDC_SHRINK,391,229,61,14
     LTEXT           "https://discord.gg/tJ6zyGb",IDC_STATIC,55,88,92,11,
                     SS_NOPREFIX | SS_CENTERIMAGE | WS_BORDER
     LTEXT           "Discord Server:",IDC_STATIC,4,89,50,11
@@ -615,7 +640,7 @@ END
 IDD_CellWidth DIALOG DISCARDABLE  0, 0, 186, 95
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Cell Width"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,129,7,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,129,24,50,14
@@ -626,7 +651,7 @@ END
 IDD_NewHeightMap DIALOG DISCARDABLE  0, 0, 186, 150
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "New Height Map"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     EDITTEXT        IDC_X_SIZE,52,7,22,12,ES_AUTOHSCROLL
     EDITTEXT        IDC_Y_SIZE,52,24,22,12,ES_AUTOHSCROLL
@@ -661,7 +686,7 @@ END
 
 IDD_CELL_SLIDER DIALOG DISCARDABLE  0, 0, 19, 64
 STYLE WS_CHILD
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     CONTROL         "",ID_SLIDER,"Static",SS_BLACKFRAME,0,1,19,62
 END
@@ -669,7 +694,7 @@ END
 IDD_BRUSH_OPTIONS DIALOG DISCARDABLE  0, 0, 200, 273
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Height Brush Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     EDITTEXT        IDC_SIZE_EDIT,71,11,17,12,ES_AUTOHSCROLL
     RTEXT           "Size in cells:",IDC_STATIC,23,12,40,8
@@ -702,7 +727,7 @@ END
 IDD_TERRAIN_MATERIAL DIALOG DISCARDABLE  0, 0, 200, 382
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Terrain Material Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     CONTROL         "",IDC_TERRAIN_TREEVIEW,"Static",SS_BLACKFRAME | 
                     SS_SUNKEN,5,20,190,135
@@ -776,7 +801,7 @@ END
 IDD_MOUND_OPTIONS DIALOG DISCARDABLE  0, 0, 200, 182
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Terrain Brush Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     RTEXT           "Amount to raise/lower:",IDC_STATIC,8,107,71,10
     EDITTEXT        IDC_SIZE_EDIT,49,11,17,12,ES_AUTOHSCROLL
@@ -809,7 +834,7 @@ END
 IDD_OBJECT_OPTIONS DIALOG DISCARDABLE  0, 0, 200, 382
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Object Selection Opts"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     LTEXT           "Search:",IDC_STATIC,3,7,25,8
     EDITTEXT        IDC_OBJECT_SEARCH_EDIT,31,5,106,12,ES_AUTOHSCROLL
@@ -840,7 +865,7 @@ END
 IDD_CONTOUR_OPTIONS DIALOG DISCARDABLE  0, 0, 148, 126
 STYLE DS_MODALFRAME | WS_MINIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Contour Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     CONTROL         "",IDC_SLIDER1,"Static",SS_BLACKFRAME,0,1,144,17
     CTEXT           "Number of lines.",IDC_STATIC,0,19,144,10
@@ -853,10 +878,25 @@ BEGIN
     DEFPUSHBUTTON   "OK",IDOK,94,105,50,14
 END
 
+IDD_TRACING_OVERLAY_OPTIONS DIALOG DISCARDABLE  0, 0, 172, 96
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Tracing Overlay Settings"
+FONT 8, "Tahoma"
+BEGIN
+    LTEXT           "Opacity:",IDC_STATIC,7,7,40,10
+    LTEXT           "100%",IDC_TRACE_OPACITY_LABEL,140,7,25,10
+    CONTROL         "",IDC_TRACE_OPACITY_SLIDER,"Static",SS_BLACKFRAME,7,19,
+                    158,17
+    LTEXT           "Resize interpolation:",IDC_STATIC,7,44,90,10
+    COMBOBOX        IDC_TRACE_FILTER_COMBO,7,56,158,60,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    DEFPUSHBUTTON   "OK",IDOK,115,76,50,14
+END
+
 IDD_TERRAIN_MODAL DIALOG DISCARDABLE  0, 0, 184, 266
 STYLE DS_MODALFRAME | WS_MINIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Replace "
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     CONTROL         "",IDC_TERRAIN_TREEVIEW,"Static",SS_BLACKFRAME | 
                     SS_SUNKEN,5,5,174,126
@@ -873,7 +913,7 @@ END
 IDD_ROAD_OPTIONS DIALOG DISCARDABLE  0, 0, 200, 382
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Road Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     CONTROL         "",IDC_ROAD_TREEVIEW,"Static",SS_BLACKFRAME | SS_SUNKEN,
                     2,20,196,189
@@ -906,7 +946,7 @@ END
 IDD_NO_OPTIONS DIALOG DISCARDABLE  0, 0, 169, 109
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "No Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     LTEXT           "If you see this message its either you selected a tool without any options or there are no selected object in the map",
                     IDC_STATIC,15,34,139,43
@@ -915,7 +955,7 @@ END
 IDD_FEATHER_OPTIONS DIALOG DISCARDABLE  0, 0, 200, 230
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Feather Brush Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     EDITTEXT        IDC_SIZE_EDIT,49,11,17,12,ES_AUTOHSCROLL
     RTEXT           "Size in cells:",IDC_STATIC,7,12,40,8
@@ -950,7 +990,7 @@ END
 IDD_MESHMOLD_OPTIONS DIALOG DISCARDABLE  0, 0, 200, 382
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Mesh Mold Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     CONTROL         "",IDC_MESHMOLD_TREEVIEW,"Static",SS_BLACKFRAME | 
                     SS_SUNKEN,5,5,190,204
@@ -986,7 +1026,7 @@ END
 IDD_MACRO_TEXTURE DIALOG DISCARDABLE  0, 0, 146, 166
 STYLE DS_MODALFRAME | WS_MINIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Select Mactotexture"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     CONTROL         "",IDC_TEXTURE_TREEVIEW,"Static",SS_BLACKFRAME | 
                     SS_SUNKEN,5,5,136,126
@@ -996,7 +1036,7 @@ END
 IDD_GLOBAL_LIGHT_OPTIONS DIALOG DISCARDABLE  0, 0, 207, 194
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Global Light Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     EDITTEXT        IDC_LR_EDIT,63,30,17,12,ES_AUTOHSCROLL
     PUSHBUTTON      "1",IDC_LR_POPUP,85,30,8,12,BS_BITMAP
@@ -1055,7 +1095,7 @@ END
 IDD_LIGHT_OPTIONS DIALOG DISCARDABLE  0, 0, 122, 156
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Light Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     GROUPBOX        "Light Color",IDC_STATIC,1,47,59,63
     EDITTEXT        IDC_RA_EDIT,25,58,32,13,ES_AUTOHSCROLL
@@ -1073,7 +1113,7 @@ END
 IDD_OPEN_MAP DIALOG DISCARDABLE  0, 0, 306, 288
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Open Map"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,246,266,50,16
     PUSHBUTTON      "Cancel",IDCANCEL,192,266,50,16
@@ -1084,7 +1124,9 @@ BEGIN
     CONTROL         "System Maps",IDC_SYSTEMMAPS,"Button",BS_AUTORADIOBUTTON | 
                     BS_PUSHLIKE,242,6,54,17
     CONTROL         "User Maps",IDC_USERMAPS,"Button",BS_AUTORADIOBUTTON | 
-                    BS_PUSHLIKE,183,6,55,17
+                    BS_PUSHLIKE,186,6,54,17
+    CONTROL         "Packed Maps",IDC_PACKED_MAPS,"Button",
+                    BS_AUTORADIOBUTTON | BS_PUSHLIKE,130,6,54,17
     LTEXT           "Search:",IDC_STATIC,7,28,25,8
     EDITTEXT        IDC_MAP_SEARCH_EDIT,35,26,180,12,ES_AUTOHSCROLL
     PUSHBUTTON      "Find",IDC_MAP_FIND_BUTTON,221,26,41,12
@@ -1094,7 +1136,7 @@ END
 IDD_SAVE_MAP DIALOG DISCARDABLE  0, 0, 306, 234
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Save Map As:"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,243,190,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,243,213,50,14
@@ -1113,7 +1155,7 @@ END
 IDD_PROPEDIT DIALOG DISCARDABLE  0, 0, 200, 84
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Property Edit"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     EDITTEXT        IDC_KEYNAME,38,7,107,14,ES_AUTOHSCROLL
     COMBOBOX        IDC_KEYTYPE,38,30,107,153,CBS_DROPDOWNLIST | WS_VSCROLL | 
@@ -1131,7 +1173,7 @@ END
 IDD_PLAYERLIST DIALOG DISCARDABLE  0, 0, 289, 295
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Player List"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     LISTBOX         IDC_PLAYERS,7,7,275,69,LBS_NOINTEGRALHEIGHT | WS_VSCROLL | 
                     WS_HSCROLL | WS_TABSTOP
@@ -1175,7 +1217,7 @@ END
 IDD_BUILD_LIST_PANEL DIALOG DISCARDABLE  0, 0, 200, 382
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Build List"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     COMBOBOX        IDC_SIDES_COMBO,9,10,184,199,CBS_DROPDOWNLIST | 
                     WS_VSCROLL | WS_TABSTOP
@@ -1214,7 +1256,7 @@ END
 IDD_SHADOW_OPTIONS DIALOG DISCARDABLE  0, 0, 119, 137
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Shadow Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     EDITTEXT        IDC_ALPHA_EDIT,55,89,32,12,ES_AUTOHSCROLL
     GROUPBOX        "Shadow Color:",IDC_STATIC,14,9,85,63
@@ -1232,7 +1274,7 @@ END
 IDD_ScriptDialog DIALOGEX 0, 0, 690, 333
 STYLE DS_MODALFRAME | WS_MINIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Scripts"
-FONT 8, "MS Sans Serif", 0, 0, 0x1
+FONT 8, "Tahoma", 0, 0, 0x1
 BEGIN
     DEFPUSHBUTTON   "Save + Close",IDOK,633,292,50,14
     PUSHBUTTON      "New &Script...",IDC_NEW_SCRIPT,633,106,50,14
@@ -1284,7 +1326,7 @@ END
 IDD_ScriptTabWindow DIALOG DISCARDABLE  0, 0, 391, 255
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Dialog"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,334,7,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,334,24,50,14
@@ -1294,7 +1336,7 @@ END
 IDD_ScriptConditions DIALOG DISCARDABLE  0, 0, 457, 238
 STYLE WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Script Conditions"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     LTEXT           "Conditions for this script:",IDC_STATIC,7,14,150,8
     LISTBOX         IDC_CONDITION_LIST,7,29,382,166,LBS_NOINTEGRALHEIGHT | 
@@ -1314,7 +1356,7 @@ END
 IDD_ScriptActionsTrue DIALOG DISCARDABLE  0, 0, 457, 238
 STYLE WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Actions if true."
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     LTEXT           "Actions to take if conditions are true:",IDC_STATIC,7,
                     14,200,8
@@ -1335,7 +1377,7 @@ END
 IDD_ScriptActionsFalse DIALOG DISCARDABLE  0, 0, 457, 238
 STYLE WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Actions if false."
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     LTEXT           "Actions to take if conditions are false:",IDC_STATIC,7,
                     14,200,8
@@ -1356,7 +1398,7 @@ END
 IDD_ScriptProperties DIALOG DISCARDABLE  0, 0, 457, 238
 STYLE WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Script Properties"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     EDITTEXT        IDC_SCRIPT_NAME,52,10,271,14,ES_AUTOHSCROLL
     CONTROL         "Script is Subroutine (Make this script usable by teams, read the manual for more info)",
@@ -1391,7 +1433,7 @@ END
 IDD_ScriptCondition DIALOG DISCARDABLE  0, 0, 581, 327
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Edit Condition:"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,513,7,61,14
     PUSHBUTTON      "&Cancel",IDCANCEL,444,7,63,14
@@ -1419,7 +1461,7 @@ END
 IDD_EDIT_PARAMETER DIALOG DISCARDABLE  0, 0, 281, 295
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Edit Parameter:"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,171,273,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,224,273,50,14
@@ -1437,7 +1479,7 @@ END
 IDD_ScriptAction DIALOGEX 0, 0, 581, 327
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Edit Action:"
-FONT 8, "MS Sans Serif", 0, 0, 0x1
+FONT 8, "Tahoma", 0, 0, 0x1
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,513,7,61,14
     PUSHBUTTON      "&Cancel",IDCANCEL,444,7,63,14
@@ -1464,7 +1506,7 @@ END
 IDD_TEAMS_DIALOG DIALOG DISCARDABLE  0, 0, 688, 351
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Team Builder"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,631,7,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,578,7,50,14
@@ -1487,7 +1529,7 @@ END
 IDD_EDIT_GROUP DIALOG DISCARDABLE  0, 0, 186, 95
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Edit Group"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,129,7,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,129,24,50,14
@@ -1502,7 +1544,7 @@ END
 IDD_EDIT_COORD_PARAMETER DIALOG DISCARDABLE  0, 0, 145, 109
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Edit Coordinate Parameter:"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,29,88,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,88,88,50,14
@@ -1518,7 +1560,7 @@ END
 IDD_EDIT_OBJECT_PARAMETER DIALOG DISCARDABLE  0, 0, 212, 237
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Edit object parameter."
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,103,216,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,155,216,50,14
@@ -1531,7 +1573,7 @@ END
 IDD_TeamIdentity DIALOG DISCARDABLE  0, 0, 213, 327
 STYLE WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Identity"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     EDITTEXT        IDC_MAX,177,2,27,14,ES_AUTOHSCROLL
     RTEXT           "Home Position:",IDC_STATIC,2,37,53,8
@@ -1611,7 +1653,7 @@ END
 IDD_TeamReinforcement DIALOG DISCARDABLE  0, 0, 213, 226
 STYLE WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Reinforcement"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     GROUPBOX        "If reinforcing, then:",IDC_STATIC,13,7,184,87
     CONTROL         "Deploy by",IDC_DEPLOY_BY,"Button",BS_AUTOCHECKBOX | 
@@ -1636,7 +1678,7 @@ END
 IDD_TeamBehavior DIALOG DISCARDABLE  0, 0, 229, 270
 STYLE WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Behavior"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     GROUPBOX        "Behavior Script Triggers:",IDC_STATIC,7,7,216,107
     GROUPBOX        "Behavior Options",IDC_STATIC,7,141,216,106
@@ -1680,7 +1722,7 @@ END
 IDD_EXPORT_SCRIPTS_OPTIONS DIALOG DISCARDABLE  0, 0, 302, 170
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Export Script Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,190,149,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,245,149,50,14
@@ -1709,7 +1751,7 @@ END
 IDD_GROVE_OPTIONS DIALOG DISCARDABLE  0, 0, 200, 374
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Grove Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     COMBOBOX        IDC_Grove_Type1,32,76,164,243,CBS_DROPDOWNLIST | 
                     CBS_SORT | WS_VSCROLL | WS_TABSTOP
@@ -1777,7 +1819,7 @@ END
 IDD_FENCE_OPTIONS DIALOG DISCARDABLE  0, 0, 200, 342
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Fence options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     LTEXT           "Search:",IDC_STATIC,5,5,25,11,SS_CENTERIMAGE
     EDITTEXT        IDC_OBJECT_SEARCH_EDIT,31,5,106,12,ES_AUTOHSCROLL | 
@@ -1800,7 +1842,7 @@ END
 IDD_BLEND_MATERIAL DIALOG DISCARDABLE  0, 0, 200, 331
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Blend Material Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     CONTROL         "",IDC_TERRAIN_TREEVIEW,"Static",SS_BLACKFRAME | 
                     SS_SUNKEN | WS_DISABLED,5,266,190,60
@@ -1836,7 +1878,7 @@ END
 IDD_ADDPLAYER DIALOG DISCARDABLE  0, 0, 157, 97
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Add A Player"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,19,76,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,79,76,50,14
@@ -1849,7 +1891,7 @@ END
 IDD_PICKUNIT DIALOGEX 0, 0, 200, 382
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Pick A Unit"
-FONT 8, "MS Sans Serif", 0, 0, 0x1
+FONT 8, "Tahoma", 0, 0, 0x1
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,63,330,133,30
     PUSHBUTTON      "Cancel",IDCANCEL,63,364,133,14
@@ -1866,7 +1908,7 @@ END
 IDD_BASE_BUILDING_PROPS DIALOG DISCARDABLE  0, 0, 229, 135
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Building Properties"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,114,114,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,172,114,50,14
@@ -1882,18 +1924,18 @@ BEGIN
     LTEXT           "Script:",IDC_STATIC,7,34,21,8
 END
 
-IDD_LOADING DIALOG DISCARDABLE  0, 0, 167, 216
+IDD_LOADING DIALOGEX 0, 0, 168, 217
 STYLE WS_POPUP
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma", 0, 0, 0x1
 BEGIN
     CONTROL         228,IDC_STATIC,"Static",SS_BITMAP | SS_CENTERIMAGE,0,0,
-                    167,216
+                    168,217
 END
 
 IDD_RAMP_OPTIONS DIALOG DISCARDABLE  0, 0, 200, 217
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Ramp Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     PUSHBUTTON      "Place Ramp",IDC_RO_APPLY,2,38,193,26
     EDITTEXT        IDC_RO_WIDTH,55,15,140,14,ES_AUTOHSCROLL
@@ -1914,7 +1956,7 @@ END
 IDD_SCORCH_OPTIONS DIALOG DISCARDABLE  0, 0, 200, 86
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Scorch Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     COMBOBOX        IDC_SCORCHTYPE,7,15,186,88,CBS_DROPDOWNLIST | WS_VSCROLL | 
                     WS_TABSTOP
@@ -1927,7 +1969,7 @@ END
 IDD_MAP_SETTINGS DIALOG DISCARDABLE  0, 0, 195, 263
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Map Settings"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,70,242,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,138,242,50,14
@@ -1952,7 +1994,7 @@ END
 IDD_LAYERSLIST DIALOG DISCARDABLE  0, 0, 221, 265
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Layers List"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     CONTROL         "Tree1",IDC_LL_TREE,"SysTreeView32",TVS_HASBUTTONS | 
                     TVS_LINESATROOT | TVS_EDITLABELS | TVS_DISABLEDRAGDROP | 
@@ -1970,7 +2012,7 @@ END
 IDD_REPLACEUNIT DIALOG DISCARDABLE  0, 0, 242, 325
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Replace Missing Unit"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,7,283,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,83,283,50,14
@@ -1985,7 +2027,7 @@ END
 IDD_WATER_OPTIONS DIALOG DISCARDABLE  0, 0, 200, 314
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Water Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     GROUPBOX        "Water Area Name:",IDC_STATIC,1,1,195,34
     COMBOBOX        IDC_WATERNAME_EDIT,7,15,186,88,CBS_DROPDOWN | CBS_SORT | 
@@ -2016,7 +2058,7 @@ END
 IDD_CAMERA_OPTIONS DIALOG DISCARDABLE  0, 0, 144, 162
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Camera Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     EDITTEXT        IDC_PITCH_EDIT,89,11,27,12,ES_AUTOHSCROLL
     PUSHBUTTON      "1",IDC_PITCH_POPUP,121,11,9,12,BS_BITMAP
@@ -2036,10 +2078,10 @@ BEGIN
                     IDC_CENTER_ON_SELECTED,13,128,116,14
 END
 
-IDD_WAYPOINT_OPTIONS DIALOG DISCARDABLE  0, 0, 200, 332
+IDD_WAYPOINT_OPTIONS DIALOGEX 0, 0, 200, 332
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Waypoint Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma", 0, 0, 0x1
 BEGIN
     GROUPBOX        "Waypoint Name:",IDC_WAYPOINT_CAPTION1,1,1,195,134
     COMBOBOX        IDC_WAYPOINTNAME_EDIT,7,14,186,271,CBS_DROPDOWN | 
@@ -2074,14 +2116,14 @@ BEGIN
                     IDC_TRAINSWP_LBLH1,8,55,178,25,NOT WS_GROUP
     EDITTEXT        IDC_TRAINSWP_LBL3,97,42,33,12,ES_READONLY
     LTEXT           "> _Station - Makes the waypoint a stopping point of the trains\n> _PingPong - The train will go back after hitting this waypoint\n>_Tunnel - Must be used for both tunnel exits \n> _Disembark - Trains will disembark units in this waypoint",
-                    IDC_TRAINSWP_LBLH2,8,81,182,53,NOT WS_GROUP
+                    IDC_TRAINSWP_LBLH2,8,81,182,62,NOT WS_GROUP
     EDITTEXT        IDC_TRAINSWP_LBL4,134,42,43,12,ES_READONLY
 END
 
 IDD_CHANGE_TEAM_OWNER DIALOG DISCARDABLE  0, 0, 200, 131
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Select a valid Player"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,85,102,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,141,102,50,14
@@ -2093,7 +2135,7 @@ END
 IDD_TeamGeneric DIALOG DISCARDABLE  0, 0, 223, 311
 STYLE WS_CHILD | WS_CAPTION
 CAPTION "Generic"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     COMBOBOX        IDC_TeamGeneric_Script1,58,13,160,66,CBS_DROPDOWN | 
                     CBS_SORT | WS_VSCROLL | WS_TABSTOP
@@ -2159,7 +2201,7 @@ END
 IDD_IMPASSABLEOPTIONS DIALOG DISCARDABLE  0, 0, 170, 73
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Impassable Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,59,52,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,113,52,50,14
@@ -2168,21 +2210,72 @@ BEGIN
     DEFPUSHBUTTON   "Preview",IDC_PREVIEW,7,52,50,14
 END
 
-IDD_RULER_OPTIONS DIALOG DISCARDABLE  0, 0, 186, 95
+IDD_RULER_OPTIONS DIALOG DISCARDABLE  0, 0, 186, 127
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Ruler Options"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     LTEXT           "Diameter:",IDC_STATIC,39,25,35,9
     EDITTEXT        IDC_RULER_WIDTH,83,21,54,14,ES_AUTOHSCROLL
     CONTROL         "Circular Measurements:",IDC_CHECK_RULER,"Button",
                     BS_AUTOCHECKBOX | BS_LEFTTEXT | WS_TABSTOP,40,51,95,14
+    CONTROL         "Use meters:",IDC_RULER_USE_METERS,"Button",
+                    BS_AUTOCHECKBOX | BS_LEFTTEXT | WS_TABSTOP,40,68,95,14
+    CONTROL         "Show Ruler Grid:",IDC_RULER_SHOW_GRID,"Button",
+                    BS_AUTOCHECKBOX | BS_LEFTTEXT | NOT WS_VISIBLE | 
+                    WS_TABSTOP,40,85,95,14
+END
+
+IDD_WAVE_EDITOR_OPTIONS DIALOGEX 0, 0, 269, 359
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
+CAPTION "Wave Editor Options"
+FONT 8, "Tahoma", 0, 0, 0x1
+BEGIN
+    LTEXT           "Type:",IDC_WAVE_TYPE_LABEL,8,8,180,9
+    PUSHBUTTON      "Cycle Type",IDC_WAVE_CYCLE_TYPE,8,22,80,16
+    PUSHBUTTON      "Undo",IDC_WAVE_UNDO,92,22,80,16
+    PUSHBUTTON      "Save",IDC_WAVE_SAVE,8,42,80,16
+    PUSHBUTTON      "Reload",IDC_WAVE_RELOAD,92,42,80,16
+    LTEXT           "Mode:",IDC_STATIC,8,66,40,9
+    CONTROL         "Create",IDC_WAVE_MODE_CREATE,"Button",
+                    BS_AUTORADIOBUTTON | BS_PUSHLIKE | WS_GROUP | WS_TABSTOP,
+                    8,78,62,16
+    CONTROL         "Manipulate",IDC_WAVE_MODE_MANIPULATE,"Button",
+                    BS_AUTORADIOBUTTON | BS_PUSHLIKE,72,78,62,16
+    CONTROL         "Paint",IDC_WAVE_MODE_PAINT,"Button",BS_AUTORADIOBUTTON | 
+                    BS_PUSHLIKE,136,78,55,16
+    CONTROL         "Bucket",IDC_WAVE_MODE_BUCKET,"Button",
+                    BS_AUTORADIOBUTTON | BS_PUSHLIKE,193,78,68,16
+    LTEXT           "Bucket brush: 120",IDC_WAVE_BRUSH_SIZE_LABEL,8,99,88,9
+    CONTROL         "",IDC_WAVE_BRUSH_SIZE,"msctls_trackbar32",WS_TABSTOP,
+                    100,97,160,12
+    LTEXT           "Create: drag on water to place a single wave.",
+                    IDC_STATIC,5,116,252,9
+    LTEXT           "Manipulate: drag a wave to move it, Ctrl+drag to rotate it, Shift+click to multi-select.",
+                    IDC_STATIC,6,128,252,18
+    LTEXT           "Paint: hold and drag to lay a trail of waves toward shore.",
+                    IDC_STATIC,6,149,252,9
+    LTEXT           "Bucket: drag along the coast to auto-fill the shoreline with waves.",
+                    IDC_STATIC,6,161,252,9
+    LTEXT           "Right-click to discard the waves you just added.",
+                    IDC_STATIC,6,173,252,9
+    CONTROL         "* * Remember to press the Save button to save your waves.",
+                    IDC_STATIC,"Static",SS_LEFTNOWORDWRAP | WS_GROUP,6,185,
+                    252,9
+    CONTROL         "",IDC_WAVE_LIST,"SysListView32",LVS_REPORT | 
+                    LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP,6,198,252,124
+    PUSHBUTTON      "Delete Selected",IDC_WAVE_DELETE,6,326,80,16
+    PUSHBUTTON      "Delete All",IDC_WAVE_DELETE_ALL,6,343,80,15
+    CONTROL         "Show wave lines",IDC_WAVE_SHOW_LINES,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,98,328,110,12
+    CONTROL         "Show shoreline",IDC_WAVE_SHOW_SHORELINE,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,98,344,110,12
 END
 
 IDD_EULA_AGREEMENT DIALOG DISCARDABLE  0, 0, 267, 289
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "EA TOOLS END USER LICENSE"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     PUSHBUTTON      "Cancel",IDCANCEL,210,268,50,14
     DEFPUSHBUTTON   "Accept Terms",IDOK,154,268,50,14
@@ -2193,7 +2286,7 @@ END
 IDD_TeamObjectProperties DIALOG DISCARDABLE  0, 0, 213, 327
 STYLE DS_MODALFRAME | WS_CHILD | WS_DISABLED | WS_CAPTION | WS_SYSMENU
 CAPTION "Common Object Properties"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     LTEXT           "Initial Health %",IDC_STATIC,11,57,58,8,WS_DISABLED
     COMBOBOX        IDC_MAPOBJECT_StartingHealth,79,54,95,71,
@@ -2245,7 +2338,7 @@ END
 IDD_MAPOBJECT_PROPS DIALOG DISCARDABLE  0, 0, 200, 382
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
 CAPTION "Object Properties"
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     EDITTEXT        IDC_MAPOBJECT_Name,33,11,160,12,ES_AUTOHSCROLL | 
                     WS_GROUP
@@ -2292,9 +2385,10 @@ BEGIN
                     WS_VSCROLL | WS_GROUP | WS_TABSTOP
     COMBOBOX        IDC_MAPOBJECT_Time,39,204,93,65,CBS_DROPDOWNLIST | 
                     WS_VSCROLL | WS_TABSTOP
-    COMBOBOX        IDC_SOUND_COMBO,66,232,127,160,CBS_DROPDOWNLIST | 
+    COMBOBOX        IDC_SOUND_COMBO,66,232,74,160,CBS_DROPDOWNLIST | 
                     CBS_AUTOHSCROLL | CBS_SORT | WS_VSCROLL | WS_GROUP | 
                     WS_TABSTOP
+    PUSHBUTTON      "Listen",IDC_PLAY_SOUND_BUTTON,143,233,50,10
     CONTROL         "Customize",IDC_CUSTOMIZE_CHECKBOX,"Button",
                     BS_AUTOCHECKBOX | WS_TABSTOP,14,247,55,10
     CONTROL         "Enabled",IDC_ENABLED_CHECKBOX,"Button",BS_AUTOCHECKBOX | 
@@ -2355,7 +2449,7 @@ END
 
 IDD_TOAST DIALOG DISCARDABLE  0, 0, 233, 36
 STYLE DS_MODALFRAME | WS_POPUP
-FONT 8, "MS Sans Serif"
+FONT 8, "Tahoma"
 BEGIN
     LTEXT           "Customizable hint text goes here...",IDC_HINT_TEXT,2,1,
                     192,33
@@ -2401,12 +2495,9 @@ BEGIN
             VALUE "FileVersion", "1, 0, 0, 0\0"
             VALUE "InternalName", "WorldBuilder\0"
             VALUE "LegalCopyright", "Copyright (C) 2003\0"
-            VALUE "LegalTrademarks", "\0"
             VALUE "OriginalFilename", "WorldBuilder.EXE\0"
-            VALUE "PrivateBuild", "\0"
             VALUE "ProductName", "WorldBuilder Application\0"
             VALUE "ProductVersion", "0, 8, 0, 0\0"
-            VALUE "SpecialBuild", "\0"
         END
     END
     BLOCK "VarFileInfo"
@@ -2424,7 +2515,7 @@ END
 //
 
 #ifdef APSTUDIO_INVOKED
-GUIDELINES DESIGNINFO DISCARDABLE 
+GUIDELINES DESIGNINFO MOVEABLE PURE 
 BEGIN
     IDD_ABOUTBOX, DIALOG
     BEGIN
@@ -2777,6 +2868,12 @@ BEGIN
         BOTTOMMARGIN, 128
     END
 
+    IDD_LOADING, DIALOG
+    BEGIN
+        RIGHTMARGIN, 167
+        BOTTOMMARGIN, 216
+    END
+
     IDD_RAMP_OPTIONS, DIALOG
     BEGIN
         LEFTMARGIN, 2
@@ -2868,9 +2965,15 @@ BEGIN
     IDD_RULER_OPTIONS, DIALOG
     BEGIN
         LEFTMARGIN, 7
-        RIGHTMARGIN, 179
+        RIGHTMARGIN, 178
         TOPMARGIN, 7
-        BOTTOMMARGIN, 88
+        BOTTOMMARGIN, 117
+    END
+
+    IDD_WAVE_EDITOR_OPTIONS, DIALOG
+    BEGIN
+        RIGHTMARGIN, 268
+        BOTTOMMARGIN, 284
     END
 
     IDD_EULA_AGREEMENT, DIALOG
@@ -3149,16 +3252,37 @@ END
 
 /////////////////////////////////////////////////////////////////////////////
 //
+// AFX_DIALOG_LAYOUT
+//
+
+IDD_LOADING AFX_DIALOG_LAYOUT MOVEABLE PURE 
+BEGIN
+    0x0000
+END
+
+IDD_WAVE_EDITOR_OPTIONS AFX_DIALOG_LAYOUT MOVEABLE PURE 
+BEGIN
+    0x0000
+END
+
+IDD_WAYPOINT_OPTIONS AFX_DIALOG_LAYOUT MOVEABLE PURE 
+BEGIN
+    0x0000
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
 // String Table
 //
 
-STRINGTABLE PRELOAD DISCARDABLE 
+STRINGTABLE DISCARDABLE 
 BEGIN
     IDR_MAINFRAME           "Adrianes Generals World Builder\nMission\nMission\n Missions (*.map)\n.map\nGeneralsMap\n Generals Mission Map"
     IDS_SKELETON            "SkeletonWindow"
 END
 
-STRINGTABLE PRELOAD DISCARDABLE 
+STRINGTABLE DISCARDABLE 
 BEGIN
     AFX_IDS_APP_TITLE       "WorldBuilder"
     AFX_IDS_IDLEMESSAGE     "Ready"
@@ -3377,6 +3501,11 @@ END
 
 STRINGTABLE DISCARDABLE 
 BEGIN
+    ID_WAVE_EDITOR_TOOL     "Place and save water waves on the map.\nWave Editor"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
     ID_FENCE_TOOL           "Places a row of objects.  Drag then use shift to stretch.\nFence"
     ID_WATER_TOOL           "Add and modify water areas.\nWater Tool"
 END
@@ -3388,13 +3517,18 @@ END
 
 STRINGTABLE DISCARDABLE 
 BEGIN
-    ID_EDIT_MAPSETTINGS     "Edit Map Settings"
+    ID_EDIT_MAPSETTINGS     "Edit Map Settings\nMap Settings"
     ID_EDIT_PICKROADS       "Pick only roads"
 END
 
 STRINGTABLE DISCARDABLE 
 BEGIN
     ID_VIEW_LAYERS_LIST     "Show or hide the layers list\nToggle LayersList"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    ID_VIEW_MINIMAP         "Show or hide the minimap\nToggle Minimap"
 END
 
 STRINGTABLE DISCARDABLE 

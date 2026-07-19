@@ -23,7 +23,6 @@ set(WORLDBUILDER_SRC
     "src/EditGroup.cpp"
     "src/EditObjectParameter.cpp"
     "src/EditParameter.cpp"
-    "src/EulaDialog.cpp"
     "src/ExportScriptsOptions.cpp"
     "src/EyedropperTool.cpp"
     "src/FeatherOptions.cpp"
@@ -65,6 +64,8 @@ set(WORLDBUILDER_SRC
     "src/RoadTool.cpp"
     "src/RulerOptions.cpp"
     "src/RulerTool.cpp"
+    "src/WaveEditorOptions.cpp"
+    "src/WaveEditorTool.cpp"
     "src/SaveMap.cpp"
     "src/ScorchOptions.cpp"
     "src/ScorchTool.cpp"
@@ -88,6 +89,7 @@ set(WORLDBUILDER_SRC
     "src/TerrainSwatches.cpp"
     "src/TileTool.cpp"
     "src/Tool.cpp"
+    "src/TracingOverlayOptions.cpp"
     "src/WaterOptions.cpp"
     "src/WaterTool.cpp"
     "src/WaypointOptions.cpp"
@@ -124,7 +126,6 @@ set(WORLDBUILDER_SRC
     "include/EditGroup.h"
     "include/EditObjectParameter.h"
     "include/EditParameter.h"
-    "include/euladialog.h"
     "include/ExportScriptsOptions.h"
     "include/EyedropperTool.h"
     "include/FeatherOptions.h"
@@ -166,6 +167,8 @@ set(WORLDBUILDER_SRC
     "include/RoadTool.h"
     "include/RulerOptions.h"
     "include/RulerTool.h"
+    "include/WaveEditorOptions.h"
+    "include/WaveEditorTool.h"
     "include/SaveMap.h"
     "include/ScorchOptions.h"
     "include/ScorchTool.h"
@@ -188,6 +191,7 @@ set(WORLDBUILDER_SRC
     "include/TerrainSwatches.h"
     "include/TileTool.h"
     "include/Tool.h"
+    "include/TracingOverlayOptions.h"
     "include/WaterOptions.h"
     "include/WaterTool.h"
     "include/WaypointOptions.h"
@@ -231,7 +235,9 @@ target_link_libraries(z_worldbuilder PRIVATE
 )
 
 if(WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows")
-    target_link_options(z_worldbuilder PRIVATE /NODEFAULTLIB:libci.lib /NODEFAULTLIB:libc.lib)
+    # /LARGEADDRESSAWARE lets this 32-bit exe use up to 4GB of address space on
+    # 64-bit Windows (instead of the default 2GB), giving big maps more RAM headroom.
+    target_link_options(z_worldbuilder PRIVATE /LARGEADDRESSAWARE /NODEFAULTLIB:libci.lib /NODEFAULTLIB:libc.lib)
     target_compile_definitions(z_worldbuilder PRIVATE _AFXDLL)
     target_sources(z_worldbuilder PRIVATE res/WorldBuilder.rc)
     set_target_properties(z_worldbuilder PROPERTIES OUTPUT_NAME WorldBuilderZH)

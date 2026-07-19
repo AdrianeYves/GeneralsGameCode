@@ -31,10 +31,20 @@
 
 #include "Common/Debug.h"
 #include "Common/DataChunk.h"
+#include "Common/INIException.h"
 #include "Common/PlayerTemplate.h"
 #include "Common/MapReaderWriterInfo.h"
 #include "Common/ThingTemplate.h"
 #include "Common/ThingFactory.h"
+// Stores whose map.ini overrides must be torn down when unloading a map.ini (mirrors
+// the WB INI type table in INI.cpp + the game's own between-match reset()).
+#include "Common/SpecialPower.h"
+#include "Common/Science.h"
+#include "GameLogic/Weapon.h"
+#include "GameLogic/Armor.h"
+#include "GameLogic/ObjectCreationList.h"
+#include "GameClient/FXList.h"
+#include "GameClient/Water.h"
 #include "Common/WellKnownKeys.h"
 
 #include "GameClient/Line2D.h"
@@ -65,6 +75,10 @@
 
 #include "TileTool.h"
 
+#include <algorithm>
+#include <string>
+#include <vector>
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -89,6 +103,187 @@ enum DIRECTION
 
 static Bool g_mapiniloaded = false;
 static Bool g_warnedfordupedforthismap = false;
+
+// ----------------------------------------------------------------------------
+// Gracefully unload map.ini overrides.
+//
+// map.ini is loaded with INI_LOAD_CREATE_OVERRIDES, which dangles "override"
+// instances off the base templates in each store (the same mechanism the game uses
+// for map-specific tweaks). Each store's reset() walks its templates and calls
+// Overridable::deleteOverrides(), which deletes ONLY the entries marked as overrides
+// and leaves the base game data intact -- exactly what the game does between matches.
+//
+// We only reset the stores that (a) the WB INI type table (INI.cpp theWbTypeTable)
+// can actually create overrides in AND (b) have a real override-only teardown. Object,
+// Weapon, Science, SpecialPower and Water/Weather qualify. FXList / OCL / Armor have
+// empty reset()s and ParticleSystemManager::reset() is a full wipe (not override-only),
+// so we deliberately skip those -- map.ini overrides to them are rare, and calling
+// their reset would either do nothing or destroy non-override state.
+static void unloadMapIniOverrides(void)
+{
+	if (!g_mapiniloaded)
+		return;
+
+	if (TheThingFactory)       TheThingFactory->reset();        // Object
+	if (TheWeaponStore)        TheWeaponStore->reset();         // Weapon
+	if (TheScienceStore)       TheScienceStore->reset();        // Science
+	if (TheSpecialPowerStore)  TheSpecialPowerStore->reset();   // SpecialPower
+
+	// Water transparency / radar color override (GameLogic does this same dance on its
+	// own reset). TheWaterTransparency is an OVERRIDE<> smart pointer.
+	if (TheWaterTransparency.getNonOverloadedPointer())
+	{
+		WaterTransparencySetting *wt =
+			(WaterTransparencySetting*)TheWaterTransparency.getNonOverloadedPointer();
+		TheWaterTransparency = (WaterTransparencySetting*)wt->deleteOverrides();
+	}
+
+	// Re-link object templates after stripping overrides (resolves names, rebuilds the
+	// upgrade/module references) -- the same call the WB loader makes after parsing.
+	if (TheThingFactory)
+		TheThingFactory->postProcessLoad();
+
+	g_mapiniloaded = false;
+}
+
+// ----------------------------------------------------------------------------
+// Map.ini pre-scan.
+//
+// The engine treats "RemoveModule <tag>" for a tag the template doesn't have as a
+// fatal error (ThingTemplate::parseRemoveModule throws -- "The game will crash
+// now!"). Maps are often authored against game data that doesn't match the local
+// install (patched INIZH.big, mods), so before handing map.ini to the parser we
+// blank out just the RemoveModule lines that would throw and load everything else.
+// Mirrors ThingTemplate::removeModuleInfo's search: the behavior, draw and
+// clientUpdate module lists.
+static Bool templateHasModuleTag(const ThingTemplate *tmpl, const char *tag)
+{
+	const ModuleInfo *lists[] = {
+		&tmpl->getBehaviorModuleInfo(),
+		&tmpl->getDrawModuleInfo(),
+		&tmpl->getClientUpdateModuleInfo(),
+	};
+	for (Int li = 0; li < 3; ++li)
+		for (Int i = 0; i < lists[li]->getCount(); ++i)
+			if (strcmp(lists[li]->getNthTag(i).str(), tag) == 0)
+				return true;
+	return false;
+}
+
+// Returns the path loadWB should read: iniPath itself when nothing had to be
+// stripped, else a temp copy with the offending lines blanked. Blanked lines are
+// kept as empty lines so parser error line numbers still match the real map.ini.
+// skippedOut collects one description per stripped directive.
+static AsciiString sanitizeMapIni(const AsciiString &iniPath, std::vector<AsciiString> &skippedOut)
+{
+	FILE *fp = fopen(iniPath.str(), "rt");
+	if (fp == NULL)
+		return iniPath;	// let the real loader produce the error
+
+	std::string output;
+	Bool modified = false;
+
+	const ThingTemplate *curTemplate = NULL;
+	AsciiString curObjName;
+	std::vector<AsciiString> tagsAdded;		// tags introduced inside this block (AddModule headers)
+	std::vector<AsciiString> tagsRemoved;	// tags consumed by an earlier RemoveModule in this block
+
+	char line[4096];
+	Int lineNum = 0;
+	while (fgets(line, sizeof(line), fp))
+	{
+		++lineNum;
+
+		// tokenize a working copy, stripping comments the way INI::readLine does
+		char work[4096];
+		strcpy(work, line);
+		char *cmt = strchr(work, ';');
+		if (cmt) *cmt = 0;
+		cmt = strstr(work, "//");
+		if (cmt) *cmt = 0;
+		Bool hasEquals = (strchr(work, '=') != NULL);
+
+		static const char *seps = " \t\n\r=";
+		const char *tok1 = strtok(work, seps);
+		const char *tok2 = tok1 ? strtok(NULL, seps) : NULL;
+		const char *tok3 = tok2 ? strtok(NULL, seps) : NULL;
+
+		Bool keep = true;
+		if (tok1 && tok2 && !hasEquals && strcmp(tok1, "Object") == 0)
+		{
+			// block header ("Object <name>"; "Object = <name>" is a field elsewhere)
+			curObjName = tok2;
+			curTemplate = TheThingFactory ? TheThingFactory->findTemplate(curObjName, FALSE) : NULL;
+			if (curTemplate == NULL && TheThingFactory)
+			{
+				// object defined by the map.ini itself: ThingFactory::newTemplate seeds it
+				// as a copy of DefaultThingTemplate, so those are the module tags a
+				// RemoveModule will actually see (ModuleTag_DefaultInactiveBody etc.)
+				curTemplate = TheThingFactory->findTemplate(AsciiString("DefaultThingTemplate"), FALSE);
+			}
+			tagsAdded.clear();
+			tagsRemoved.clear();
+		}
+		else if (tok1 && tok2 && strcmp(tok1, "RemoveModule") == 0)
+		{
+			AsciiString tag(tok2);
+			Bool present = false;
+			if (std::find(tagsRemoved.begin(), tagsRemoved.end(), tag) == tagsRemoved.end())
+			{
+				if (curTemplate && templateHasModuleTag(curTemplate, tok2))
+					present = true;
+				else if (std::find(tagsAdded.begin(), tagsAdded.end(), tag) != tagsAdded.end())
+					present = true;
+			}
+			if (present)
+			{
+				tagsRemoved.push_back(tag);
+			}
+			else
+			{
+				keep = false;
+				AsciiString warn;
+				warn.format("line %d: RemoveModule %s -- '%s' has no such module", lineNum, tok2,
+					curObjName.isEmpty() ? "(no object)" : curObjName.str());
+				skippedOut.push_back(warn);
+			}
+		}
+		else if (tok1 && tok3 &&
+				 (strcmp(tok1, "Behavior") == 0 || strcmp(tok1, "Draw") == 0 ||
+				  strcmp(tok1, "Body") == 0 || strcmp(tok1, "ClientUpdate") == 0 ||
+				  strcmp(tok1, "ClientBehavior") == 0))
+		{
+			// module header (e.g. under AddModule): its tag now exists for this block
+			tagsAdded.push_back(AsciiString(tok3));
+		}
+
+		if (keep)
+		{
+			output += line;
+		}
+		else
+		{
+			output += "\n";	// keep line numbering intact
+			modified = true;
+		}
+	}
+	fclose(fp);
+
+	if (!modified)
+		return iniPath;
+
+	char tempDir[MAX_PATH];
+	::GetTempPathA(MAX_PATH, tempDir);
+	AsciiString tempPath;
+	tempPath.format("%swb_sanitized_map.ini", tempDir);
+
+	FILE *out = fopen(tempPath.str(), "wt");
+	if (out == NULL)
+		return iniPath;	// can't write the temp copy; let the loader fail loudly
+	fwrite(output.data(), 1, output.size(), out);
+	fclose(out);
+	return tempPath;
+}
 static bool secondGreaterThan(const std::pair<AsciiString, Int>& __t1, const std::pair<AsciiString, Int>& __t2)
 {
 	return __t1.second > __t2.second;
@@ -1517,8 +1712,20 @@ void CWorldBuilderDoc::OnUpdateEditRedo(CCmdUI* pCmdUI)
 	pCmdUI->Enable(m_undoList!=NULL && m_curRedo>0);
 }
 
-void CWorldBuilderDoc::OnEditUndo() 
+void CWorldBuilderDoc::OnEditUndo()
 {
+	// If the Wave Editor has a pending wave edit, Ctrl+Z (and the Edit ▸ Undo menu)
+	// undo that wave action instead of the map undo.  We key off hasUndo() rather
+	// than the active tool: holding Ctrl can transiently flip the current tool to the
+	// pointer, which would otherwise make the check miss.
+	// Currently the wave editor undo sometimes bugged out the undo logic of the original
+	// TODO: check and fix
+	// if (WaveEditorTool::hasUndo())
+	// {
+	// 	WaveEditorTool::undoLast();
+	// 	return;
+	// }
+
 	Undoable *pUndo = m_undoList;
 	m_needAutosave = true;
 	// DEBUG_LOG(("NEED AUTOSAVE OnEditUndo ...\n"));
@@ -1825,6 +2032,10 @@ BOOL CWorldBuilderDoc::OnNewDocument()
 	WbApp()->selectPointerTool();
 	PolygonTrigger::deleteTriggers();
 
+	WaveEditorTool::ClearWavesForNewOpenedMap();
+	WaveEditorOptions::refresh();
+	// WaveEditorTool::loadTracksInstant(); // theres nothing to load  here lol its a new map
+
 	// Make sure that all the old units are removed from the list.
 	// Bug fix by MLL 1/14/03
 	TheLayersList->enableUpdates();
@@ -1988,61 +2199,11 @@ void CWorldBuilderDoc::LoadEditTime(const CString& mapPath)
 	}
 }
 
-BOOL CWorldBuilderDoc::OnOpenDocument(LPCTSTR lpszPathName) 
+BOOL CWorldBuilderDoc::OnOpenDocument(LPCTSTR lpszPathName)
 {
 
 	if (g_mapiniloaded)
-	{
-		MessageBeep(MB_ICONSTOP);
-		int res = MessageBox(
-			NULL,
-			"A Map.ini override was previously loaded.\n\n"
-			"We still have not find a way to clear those stuff on memory - so i am gonna force you to restart.\n"
-			"Press OK to restart now or Cancel to continue editing the same map.\n\n"
-			"This is retarded i know but i do not want to crash your worldbuilder accidentally - Adriane.\n",
-			"Map.ini Cleanup Required",
-			MB_OKCANCEL | MB_ICONERROR
-		);
-
-		if (res == IDOK)
-		{
-			try {
-				CString exePath;
-				GetModuleFileName(NULL, exePath.GetBuffer(_MAX_PATH), _MAX_PATH);
-				exePath.ReleaseBuffer();
-
-				// optional: autosave or clean up before restart
-				if (AfxGetApp()->GetMainWnd())
-					AfxGetApp()->GetMainWnd()->SendMessage(WM_CLOSE);
-
-				// restart the same executable
-				STARTUPINFO si = { sizeof(si) };
-				PROCESS_INFORMATION pi;
-				ZeroMemory(&pi, sizeof(pi));
-				CreateProcess(
-					exePath,             // application path
-					NULL,                // command line
-					NULL, NULL, FALSE,
-					0,                   // no special flags
-					NULL, NULL,          // environment and directory
-					&si, &pi
-				);
-
-				// ensure current process dies
-				::ExitProcess(0);
-			}
-			catch (...) {
-				::ExitProcess(0);
-			}
-
-			return FALSE;
-		}
-		else
-		{
-			// user canceled opening new map
-			return FALSE;
-		}
-	}
+		unloadMapIniOverrides();
 #ifdef ONLY_ONE_AT_A_TIME
 	if (gAlreadyOpen) {
 		::AfxMessageBox(IDS_ONLY_ONE_FILE);
@@ -2099,7 +2260,7 @@ BOOL CWorldBuilderDoc::OnOpenDocument(LPCTSTR lpszPathName)
 			// ini.loadObjectsOnly(iniPath, NULL);
 			ini.loadWB(iniPath, INI_LOAD_CREATE_OVERRIDES, NULL);
 
-			ObjectOptions::reprocessObjectList();
+				ObjectOptions::reprocessObjectList();
 
 			g_mapiniloaded = true;
 		}
@@ -2130,6 +2291,22 @@ BOOL CWorldBuilderDoc::OnOpenDocument(LPCTSTR lpszPathName)
 	if (CMainFrame::GetMainFrame() && CMainFrame::GetMainFrame()->getScriptDialog()) {
 		CMainFrame::GetMainFrame()->closeScriptDialog();
 	}
+
+	CString fullPath = lpszPathName;
+	WaveEditorTool::ClearWavesForNewOpenedMap();
+	WaveEditorOptions::refresh();
+// 	WaveEditorTool::loadTracksInstant(fullPath, this);
+
+// 	if (WbView3d *p3View = Get3DView()) {
+//     p3View->Invalidate(FALSE);
+//     p3View->UpdateWindow();
+// }
+	
+	// if(WaveEditorTool::isEditorActive())
+	// {
+	// WaveEditorOptions::refresh();
+	// }
+
 
 	// WbApp()->OnRefreshAppAbout();
 	// DEBUG_LOG(("strTitle=%s strPathName=%s\n", lpszPathName, m_strPathName));

@@ -64,6 +64,7 @@ MinimapDialog::MinimapDialog(CWnd *pParent)
 	  m_dragging(false),
 	  m_rebuildPending(false),
 	  m_showObjects(true),
+	  m_lastViewBoxRect(0, 0, 0, 0),
 	  m_refreshDelayMs(250)
 {
 	// Load persisted config (clamp to valid ranges).
@@ -238,6 +239,13 @@ void MinimapDialog::OnPaint()
 		0, 0, clientRect.Width(), clientRect.Height(),
 		0, 0, m_resolution, m_resolution,
 		m_pixelBuffer, &bmi, DIB_RGB_COLORS, SRCCOPY);
+
+	// Draw the camera view box as a GDI overlay at full client resolution (not baked
+	// into the low-res buffer), so the lines are smooth and the thickness is crisp
+	// regardless of the sampling resolution.
+	CRect boxRect;
+	drawViewBoxOverlay(dc.m_hDC, clientRect.Width(), clientRect.Height(), &boxRect);
+	m_lastViewBoxRect = boxRect;
 }
 
 void MinimapDialog::centerViewAtClient(CPoint point)
@@ -428,11 +436,11 @@ void MinimapDialog::rebuildTerrain()
 	Real minHeight = 10000.0f;
 	Real avgHeight = 0.0f;
 	Int count = 0;
-	for (Int y = 0; y < res; ++y)
+	for (Int a = 0; a < res; ++a)
 	{
 		for (Int x = 0; x < res; ++x)
 		{
-			Real h = pMap->getHeight(cellX[x], cellY[y]);
+			Real h = pMap->getHeight(cellX[a], cellY[a]);
 			avgHeight += h;
 			if (h > maxHeight) maxHeight = h;
 			if (h < minHeight) minHeight = h;
@@ -583,8 +591,6 @@ static inline UnsignedInt packBGRA(Int rgb)
 	return (UnsignedInt)(b | (g << 8) | (r << 16) | (255 << 24));
 }
 
-// Resource structures (supply docks + oil derricks) get a distinct solid-black
-// marker, matching the Thrax minimap's only building-type-specific styling.
 static Bool isResourceStructure(const ThingTemplate *t)
 {
 	if (!t)
@@ -609,6 +615,88 @@ void MinimapDialog::fillRect(Int cx, Int cy, Int w, Int h, UnsignedInt color)
 			pixel(xx, yy) = color;
 		}
 	}
+}
+
+// Filled circle (centered at cx,cy in top-down buffer space), clipped to the
+// buffer. 'size' is the full diameter. Same style as fillDiamond: a simple
+// per-pixel distance test, so it scales cleanly to any minimap resolution.
+void MinimapDialog::fillCircle(Int cx, Int cy, Int size, UnsignedInt color)
+{
+	if (size < 1) size = 1;
+	Int r = size / 2;
+	Int rSq = r * r;
+	for (Int dy = -r; dy <= r; ++dy)
+	{
+		Int yy = cy + dy;
+		if (yy < 0 || yy >= m_resolution) continue;
+		for (Int dx = -r; dx <= r; ++dx)
+		{
+			Int xx = cx + dx;
+			if (xx < 0 || xx >= m_resolution) continue;
+			if (dx * dx + dy * dy <= rSq)
+				pixel(xx, yy) = color;
+		}
+	}
+}
+
+// Filled N-pointed star (centered at cx,cy in top-down buffer space), clipped to
+// the buffer. 'size' is the full outer diameter, 'points' is the point count.
+// Point-in-star test: for a pixel at angle theta from center, the star boundary
+// radius oscillates between outerR and innerR as theta sweeps past each point;
+// the pixel is inside if its distance is <= that boundary radius at its angle.
+// Pure math, same family as fillRect/fillDiamond -- scales to any resolution.
+void MinimapDialog::fillStar(Int cx, Int cy, Int size, UnsignedInt color, Int points)
+{
+	if (size < 1) size = 1;
+	if (points < 3) points = 5;
+	Real outerR = size * 0.5f;
+	Real innerR = outerR * 0.45f;			// classic 5-point star proportion
+	Real anglePerPoint = (2.0f * PI) / points;
+	Real halfAngle = anglePerPoint * 0.5f;
+	Int r = (Int)outerR + 1;
+
+	for (Int dy = -r; dy <= r; ++dy)
+	{
+		Int yy = cy + dy;
+		if (yy < 0 || yy >= m_resolution) continue;
+		for (Int dx = -r; dx <= r; ++dx)
+		{
+			Int xx = cx + dx;
+			if (xx < 0 || xx >= m_resolution) continue;
+
+			Real dist = sqrt((Real)(dx * dx + dy * dy));
+			if (dist > outerR) continue;
+
+			Real theta = atan2((Real)dy, (Real)dx);
+			Real localAngle = fmod(theta + PI, anglePerPoint);
+			if (localAngle > halfAngle)
+				localAngle = anglePerPoint - localAngle;
+
+			Real boundaryR = outerR - (outerR - innerR) * (localAngle / halfAngle);
+
+			if (dist <= boundaryR)
+				pixel(xx, yy) = color;
+		}
+	}
+}
+
+// Two-tone star: a black outer star with a smaller gold star stamped on top, giving
+// a bordered look (like the outlined-box structure marker, but for tech buildings).
+// 'borderPx' is the border thickness in buffer pixels on each side; the gold star's
+// outer diameter shrinks by 2*borderPx so the black ring remains visible all around,
+// including at each point tip.
+void MinimapDialog::fillBorderedStar(Int cx, Int cy, Int size, Int borderPx, Int points)
+{
+	if (borderPx < 1) borderPx = 1;
+
+	const UnsignedInt black = packBGRA(0x000000);
+	const UnsignedInt gold  = packBGRA(0xFFD700);
+
+	fillStar(cx, cy, size, black, points);
+
+	Int innerSize = size - borderPx * 2;
+	if (innerSize < 1) innerSize = 1;
+	fillStar(cx, cy, innerSize, gold, points);
 }
 
 // Fill a diamond (rotated square) of the given size (centered at cx,cy in top-down
@@ -638,6 +726,100 @@ void MinimapDialog::fillDiamond(Int cx, Int cy, Int size, UnsignedInt color)
 			pixel(xx, yy) = color;
 		}
 	}
+}
+
+// Draw the 3D view's camera frustum as a box, like the game radar's view box. Drawn
+// as a GDI overlay in client space (full display resolution) so the lines are smooth
+// and the thickness is crisp regardless of the sampling resolution. Corners come from
+// WbView3d::getViewFrustumGroundCorners (ground-plane projection of the 4 viewport
+// corners).
+void MinimapDialog::drawViewBoxOverlay(HDC hdc, Int clientW, Int clientH, CRect *outBounds)
+{
+	CWorldBuilderDoc* pDoc = CWorldBuilderDoc::GetActiveDoc();
+	if (!pDoc) return;
+	WorldHeightMapEdit *pMap = pDoc->GetHeightMap();
+	if (!pMap) return;
+	WbView3d *p3d = pDoc->Get3DView();
+	if (!p3d) return;
+
+	Coord3D corners[4];
+	if (!p3d->getViewFrustumGroundCorners(corners))
+		return;
+
+	Int border = pMap->getBorderSize();
+	Real xSpan = INT_TO_REAL(pMap->getXExtent());
+	Real ySpan = INT_TO_REAL(pMap->getYExtent());
+	if (xSpan <= 0.0f || ySpan <= 0.0f) return;
+
+	POINT pts[5];
+	for (int i = 0; i < 4; ++i)
+	{
+		Real fx = (corners[i].x / MAP_XY_FACTOR + border) / xSpan;
+		Real fy = (corners[i].y / MAP_XY_FACTOR + border) / ySpan;
+		if (fx < 0.0f) fx = 0.0f;  if (fx > 1.0f) fx = 1.0f;
+		if (fy < 0.0f) fy = 0.0f;  if (fy > 1.0f) fy = 1.0f;
+		pts[i].x = (LONG)(fx * clientW);
+		pts[i].y = (LONG)((1.0f - fy) * clientH);
+	}
+	pts[4] = pts[0];
+
+	Int thickness = clientW / 128;
+	if (thickness < 2) thickness = 2;
+
+	if (outBounds)
+	{
+		Int minX = pts[0].x, maxX = pts[0].x, minY = pts[0].y, maxY = pts[0].y;
+		for (int i = 1; i < 4; ++i)
+		{
+			if (pts[i].x < minX) minX = pts[i].x;
+			if (pts[i].x > maxX) maxX = pts[i].x;
+			if (pts[i].y < minY) minY = pts[i].y;
+			if (pts[i].y > maxY) maxY = pts[i].y;
+		}
+		// Pad by pen thickness -- otherwise the rect only covers the centerline.
+		outBounds->SetRect(minX - thickness, minY - thickness, maxX + thickness, maxY + thickness);
+	}
+
+	if (hdc)
+	{
+		HPEN pen = CreatePen(PS_SOLID, thickness, RGB(255, 255, 0));
+		HGDIOBJ oldPen = SelectObject(hdc, pen);
+		HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+		Polyline(hdc, pts, 5);
+		SelectObject(hdc, oldPen);
+		SelectObject(hdc, oldBrush);
+		DeleteObject(pen);
+	}
+}
+
+void MinimapDialog::updateViewBoxOverlay()
+{
+	if (!::IsWindow(m_hWnd) || !IsWindowVisible() || !m_terrainBuilt)
+		return;
+
+	CRect clientRect;
+	GetClientRect(&clientRect);
+
+	CRect newRect;
+	drawViewBoxOverlay(NULL, clientRect.Width(), clientRect.Height(), &newRect);
+	if (newRect.IsRectEmpty())
+		return;
+
+	CRect dirty = newRect;
+	if (!m_lastViewBoxRect.IsRectEmpty())
+		dirty |= m_lastViewBoxRect;
+	dirty &= clientRect;
+
+	// FALSE: don't erase first -- OnPaint's StretchDIBits repaints those pixels
+	// from the cached buffer anyway, so a pre-erase is just a wasted fill.
+	InvalidateRect(&dirty, FALSE);
+
+	// UpdateWindow forces WM_PAINT synchronously instead of waiting for the
+	// queue to drain (which won't happen mid-drag). Safe here specifically
+	// because 'dirty' is small: BeginPaint's clip rect bounds both the
+	// StretchDIBits and the Polyline to just that area, so cost tracks the
+	// box's on-screen size, not the 256x256 display or the resolution buffer.
+	UpdateWindow();
 }
 
 // Overlay map objects, adapting the Thrax minimap upgrade:
@@ -676,6 +858,7 @@ void MinimapDialog::drawObjects()
 	if (outlineWidth < 1) outlineWidth = 1;
 
 	const UnsignedInt black = packBGRA(0x000000);
+	const UnsignedInt white = packBGRA(0xFFFFFF);
 
 	for (MapObject *pObj = MapObject::getFirstMapObject(); pObj; pObj = pObj->getNext())
 	{
@@ -713,11 +896,17 @@ void MinimapDialog::drawObjects()
 		// Structure.
 		if (isResourceStructure(t))
 		{
-			// Solid black marker, slightly larger (matches Thrax resource styling).
 			Int rs = structSize < 7 ? 7 : structSize;
-			fillRect(mx, cy, rs, rs, black);
+			fillBorderedStar(mx, cy, rs, white, 5);
 			continue;
 		}
+
+		// if (isTechStructure(t))
+		// {
+		// 	Int rs = structSize < 8 ? 8 : structSize;	// stars need a bit more room to read
+		// 	fillStar(mx, cy, rs, black, 5);
+		// 	continue;
+		// }
 
 		// Outlined box: black outer rect, house-color inner fill.
 		fillRect(mx, cy, structSize, structSize, black);

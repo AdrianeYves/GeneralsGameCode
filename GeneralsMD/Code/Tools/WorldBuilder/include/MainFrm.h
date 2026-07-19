@@ -51,6 +51,7 @@
 #include "ScorchOptions.h"
 #include "BuildList.h"
 #include "RulerOptions.h"
+#include "WaveEditorOptions.h"
 
 #define TWO_D_WINDOW_SECTION "TwoDWindow"
 #define MAIN_FRAME_SECTION "MainFrame"
@@ -135,11 +136,17 @@ protected:  // control bar embedded members
 	MinimapDialog*			m_minimapDialog;
 	ScriptDialog*				m_scriptDialog;
 	RulerOptions				m_rulerOptions;
+	WaveEditorOptions			m_waveEditorOptions;
 	
 	Int								m_curOptionsX;
 	Int								m_curOptionsY;
 	Int								m_optionsPanelWidth;
 	Int								m_optionsPanelHeight;
+	// The Wave Editor panel is wider than the other option panels; track its own size so
+	// it isn't folded into the shared m_optionsPanelWidth (which would widen every other
+	// panel, e.g. Object Properties).  See showOptionsDialog().
+	Int								m_waveEditorPanelWidth;
+	Int								m_waveEditorPanelHeight;
 	Int								m_globalLightOptionsWidth;
 	Int								m_globalLightOptionsHeight;
 

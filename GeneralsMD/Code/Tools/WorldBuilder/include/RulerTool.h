@@ -35,6 +35,8 @@ protected:
 	Real			m_savedLength;
 
 	static RulerTool*	m_staticThis;
+	static Bool				m_useMeters;	///< If true, length readouts are shown in meters instead of feet.
+	static Bool				m_showGridOnActivate;	///< If true, activating the ruler forces the Show Ruler Grid overlay on.
 
 public:
 	RulerTool(void);
@@ -54,6 +56,17 @@ public:
 	static Bool switchType();
 	static int	getType();
 	static Real getLength(void);
+
+	/// Feet<->meters readout toggle. Conversion is applied at display time only;
+	/// the stored length (m_savedLength) is always in feet (= world units).
+	static void setUseMeters(Bool useMeters) { m_useMeters = useMeters; }
+	static Bool getUseMeters(void) { return m_useMeters; }
+	/// Convert a stored (feet) length to the currently-selected display unit.
+	static Real toDisplayUnits(Real feet) { return m_useMeters ? (feet * 0.3048f) : feet; }
+
+	/// Whether activating the ruler tool forces the Show Ruler Grid overlay on.
+	static void setShowGridOnActivate(Bool val);
+	static Bool getShowGridOnActivate(void) { return m_showGridOnActivate; }
 
 };
 

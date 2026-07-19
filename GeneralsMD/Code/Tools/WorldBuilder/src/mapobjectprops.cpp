@@ -32,6 +32,10 @@
 #include "Common/UnicodeString.h"
 #include "Common/WellKnownKeys.h"
 #include "Common/AudioEventInfo.h"
+#include "Common/AudioEventRTS.h"
+#include "Common/file.h"
+#include "Common/FileSystem.h"
+#include <mmsystem.h>
 
 #include "GameLogic/Module/UpgradeModule.h"
 #include "GameLogic/Module/GenerateMinefieldBehavior.h"
@@ -69,8 +73,10 @@ MapObjectProps::MapObjectProps(Dict* dictToEdit, const char* title, CWnd* pParen
   m_height( 0 ),
   m_posUndoable( NULL ), 
   m_angle( 0 ),
-  m_defaultEntryIndex(0), 
-  m_defaultIsNone(true)
+  m_defaultEntryIndex(0),
+  m_defaultIsNone(true),
+  m_soundPreviewPlaying(false),
+  m_soundComboTextWidth(0)
 {
 
 
@@ -130,6 +136,9 @@ BEGIN_MESSAGE_MAP(MapObjectProps, CDialog)
 	ON_CBN_SELCHANGE(IDC_MAPOBJECT_Weather, _WeatherToDict)
 	ON_CBN_SELCHANGE(IDC_PRIORITY_COMBO, priorityToDict)
 	ON_CBN_SELCHANGE(IDC_SOUND_COMBO, attachedSoundToDict)
+	ON_BN_CLICKED(IDC_PLAY_SOUND_BUTTON, OnPlaySound)
+	ON_WM_TIMER()
+	ON_WM_DESTROY()
 	ON_CBN_SELENDOK(IDC_MAPOBJECT_HitPoints, _HPsToDict)
 	ON_EN_KILLFOCUS(IDC_LOOPCOUNT_EDIT, loopCountToDict)
 	ON_EN_KILLFOCUS(IDC_MAPOBJECT_Angle, SetAngle)
@@ -1618,6 +1627,10 @@ void MapObjectProps::OnDblclkProperties()
 static const Char NO_SOUND_STRING[] = "(None)";
 static const Char BASE_DEFAULT_STRING[] = "Default";
 
+static int comboEntryTextWidth( CComboBox *combo, int index );
+static int maxComboTextWidth( CComboBox *combo );
+static void setComboDropWidth( CComboBox *combo, int textWidth );
+
 void MapObjectProps::OnSelchangeProperties() 
 {
 	
@@ -1763,10 +1776,15 @@ void MapObjectProps::InitSound(void)
     m_defaultEntryIndex = soundComboBox->InsertString( 0, BASE_DEFAULT_STRING );
     m_defaultEntryName = NO_SOUND_STRING;
     m_defaultIsNone = true;
-    
+
     soundComboBox->InsertString( 1, NO_SOUND_STRING );
+
+    // One-time full measure of the dropdown width; per-selection refreshes reuse it
+    // (see maxComboTextWidth).
+    m_soundComboTextWidth = maxComboTextWidth( soundComboBox );
+    setComboDropWidth( soundComboBox, m_soundComboTextWidth );
   }
-	
+
 } // end InitSound
 
 
@@ -1816,6 +1834,8 @@ void MapObjectProps::clearCustomizeFlag( CWorldBuilderDoc* pDoc, MultipleUndoabl
 /// Move data from dialog controls to object(s)
 void MapObjectProps::attachedSoundToDict(void)
 {
+  stopSoundPreview();
+
   CComboBox * soundComboBox = (CComboBox *)GetDlgItem(IDC_SOUND_COMBO);
   if ( soundComboBox == NULL )
     return;
@@ -2097,9 +2117,208 @@ void MapObjectProps::priorityToDict(void)
 }
 
 
+// Pixel width of a single combo entry's text in the combo's font.
+static int comboEntryTextWidth( CComboBox *combo, int index )
+{
+  if ( combo == NULL || index < 0 || index >= combo->GetCount() )
+    return 0;
+  CDC *dc = combo->GetDC();
+  if ( dc == NULL )
+    return 0;
+  CFont *oldFont = dc->SelectObject( combo->GetFont() );
+  CString itemText;
+  combo->GetLBText( index, itemText );
+  int cx = dc->GetTextExtent( itemText ).cx;
+  dc->SelectObject( oldFont );
+  combo->ReleaseDC( dc );
+  return cx;
+}
+
+// Widest entry text in the combo. This walks EVERY entry -- the sound combo holds
+// thousands of audio events, so it must only run once per panel creation (InitSound).
+// dictToAttachedSound runs on every selection click and must NOT re-walk the list
+// (doing so cost ~200ms of select/deselect latency); it measures only its new
+// Default entry against the cached InitSound result.
+static int maxComboTextWidth( CComboBox *combo )
+{
+  if ( combo == NULL )
+    return 0;
+  CDC *dc = combo->GetDC();
+  if ( dc == NULL )
+    return 0;
+  CFont *oldFont = dc->SelectObject( combo->GetFont() );
+  int maxWidth = 0;
+  const int count = combo->GetCount();
+  for ( int i = 0; i < count; ++i )
+  {
+    CString itemText;
+    combo->GetLBText( i, itemText );
+    int cx = dc->GetTextExtent( itemText ).cx;
+    if ( cx > maxWidth )
+      maxWidth = cx;
+  }
+  dc->SelectObject( oldFont );
+  combo->ReleaseDC( dc );
+  return maxWidth;
+}
+
+// The Attached Sound combo box is narrow (to fit the Listen button); size its
+// dropdown list to the given text width so the full event names stay readable.
+static void setComboDropWidth( CComboBox *combo, int textWidth )
+{
+  if ( combo == NULL )
+    return;
+  combo->SetDroppedWidth( textWidth + ::GetSystemMetrics( SM_CXVSCROLL ) + 8 );
+}
+
+static const UINT SOUND_PREVIEW_TIMER_ID = 0x5051;
+
+// Duration in ms of an in-memory RIFF/WAVE buffer (data-chunk bytes over the
+// fmt-chunk average byte rate). Returns 0 when the header can't be read.
+static UnsignedInt wavDurationMs(const unsigned char *buf, UnsignedInt size)
+{
+  if (buf == NULL || size < 44 ||
+      memcmp(buf, "RIFF", 4) != 0 || memcmp(buf + 8, "WAVE", 4) != 0)
+    return 0;
+
+  UnsignedInt avgBytesPerSec = 0;
+  UnsignedInt dataSize = 0;
+  UnsignedInt pos = 12;
+  while (pos + 8 <= size)
+  {
+    UnsignedInt chunkSize;
+    memcpy(&chunkSize, buf + pos + 4, 4);
+    if (memcmp(buf + pos, "fmt ", 4) == 0 && pos + 20 <= size)
+      memcpy(&avgBytesPerSec, buf + pos + 16, 4); // nAvgBytesPerSec: 8 bytes into the chunk data
+    else if (memcmp(buf + pos, "data", 4) == 0)
+      dataSize = chunkSize;
+    pos += 8 + chunkSize + (chunkSize & 1);
+  }
+
+  if (avgBytesPerSec == 0)
+    return 0;
+  return (UnsignedInt)((double)dataSize * 1000.0 / (double)avgBytesPerSec);
+}
+
+/// Play/stop a preview of the attached sound currently selected in the combo box
+void MapObjectProps::OnPlaySound(void)
+{
+  if (m_soundPreviewPlaying)
+  {
+    stopSoundPreview();
+    return;
+  }
+
+  CComboBox * soundComboBox = (CComboBox *)GetDlgItem(IDC_SOUND_COMBO);
+  if ( soundComboBox == NULL )
+    return;
+
+  Int index = soundComboBox->GetCurSel();
+  if ( index == CB_ERR )
+    return;
+
+  CString currentString;
+  soundComboBox->GetLBText( index, currentString );
+  if ( currentString == NO_SOUND_STRING || ( index == m_defaultEntryIndex && m_defaultIsNone ) )
+    return; // nothing to play
+
+  if ( index == m_defaultEntryIndex )
+  {
+    // Correct the current string e.g. remove "Default <" and ">"
+    currentString = m_defaultEntryName.str();
+  }
+
+  AsciiString eventName( static_cast< const char * >( currentString ) );
+  AudioEventInfo * audioEventInfo = TheAudio->findAudioEventInfo( eventName );
+  if ( audioEventInfo == NULL )
+    return;
+
+  // Resolve the event to its audio file the same way the script-editor preview does.
+  // TheAudio->addAudioEvent can't be used here: playback only starts inside
+  // TheAudio->update(), which WB never pumps (and which dereferences the game's
+  // TheTacticalView), so the preview goes through Win32 PlaySound instead.
+  AudioEventRTS event;
+  event.setEventName( eventName );
+  event.setAudioEventInfo( audioEventInfo );
+  event.generateFilename();
+  if ( event.getFilename().isEmpty() )
+    return;
+
+  // Read through TheFileSystem so sounds packed in .big archives work too;
+  // PlaySound then plays from memory (the buffer must stay alive while playing)
+  File *file = TheFileSystem->openFile( event.getFilename().str(), File::READ | File::BINARY );
+  if ( file == NULL )
+    return;
+  Int size = file->size();
+  if ( size <= 0 )
+  {
+    file->close();
+    return;
+  }
+  m_soundPreviewData.resize( size );
+  Int bytesRead = file->read( &m_soundPreviewData[0], size );
+  file->close();
+  if ( bytesRead != size )
+  {
+    m_soundPreviewData.clear();
+    return;
+  }
+
+  Bool looping = ( audioEventInfo->m_control & AC_LOOP ) != 0;
+  DWORD flags = SND_MEMORY | SND_ASYNC | SND_NODEFAULT;
+  if ( looping )
+    flags |= SND_LOOP;
+  if ( !::PlaySound( (LPCSTR)&m_soundPreviewData[0], NULL, flags ) )
+  {
+    m_soundPreviewData.clear();
+    return;
+  }
+
+  m_soundPreviewPlaying = true;
+  SetDlgItemText( IDC_PLAY_SOUND_BUTTON, "Stop" );
+
+  // One-shot sounds flip the button back when they finish; loops play until stopped
+  if ( !looping )
+  {
+    UnsignedInt ms = wavDurationMs( &m_soundPreviewData[0], (UnsignedInt)size );
+    SetTimer( SOUND_PREVIEW_TIMER_ID, ms > 0 ? ms + 100 : 10000, NULL );
+  }
+}
+
+void MapObjectProps::stopSoundPreview(void)
+{
+  if ( !m_soundPreviewPlaying )
+    return;
+  ::PlaySound( NULL, NULL, 0 );
+  KillTimer( SOUND_PREVIEW_TIMER_ID );
+  m_soundPreviewPlaying = false;
+  m_soundPreviewData.clear();
+  if ( GetDlgItem( IDC_PLAY_SOUND_BUTTON ) )
+    SetDlgItemText( IDC_PLAY_SOUND_BUTTON, "Listen" );
+}
+
+void MapObjectProps::OnTimer(UINT nIDEvent)
+{
+  if ( nIDEvent == SOUND_PREVIEW_TIMER_ID )
+  {
+    // the one-shot preview finished playing on its own
+    stopSoundPreview();
+    return;
+  }
+  COptionsPanel::OnTimer( nIDEvent );
+}
+
+void MapObjectProps::OnDestroy()
+{
+  stopSoundPreview();
+  COptionsPanel::OnDestroy();
+}
+
 /// Move data from object to dialog controls
 void MapObjectProps::dictToAttachedSound()
 {
+  stopSoundPreview();
+
   CComboBox * soundComboBox = (CComboBox *)GetDlgItem(IDC_SOUND_COMBO);
   if ( soundComboBox == NULL )
     return;
@@ -2148,6 +2367,14 @@ void MapObjectProps::dictToAttachedSound()
   {
     m_defaultEntryIndex = soundComboBox->InsertString(0, BASE_DEFAULT_STRING);
   }
+
+  // The new "Default <...>" entry may be the longest one: measure just that entry
+  // against the cached full-list width from InitSound(). This runs on every selection
+  // click, so re-measuring the whole list here (thousands of sound events) is what
+  // caused the ~200ms select/deselect latency regression.
+  int defaultEntryWidth = comboEntryTextWidth( soundComboBox, m_defaultEntryIndex );
+  setComboDropWidth( soundComboBox,
+    defaultEntryWidth > m_soundComboTextWidth ? defaultEntryWidth : m_soundComboTextWidth );
 
   // Now select the correct entry in the list box
   AsciiString sound;

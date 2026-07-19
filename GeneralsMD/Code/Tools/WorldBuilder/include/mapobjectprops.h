@@ -92,6 +92,11 @@ protected:
 	Bool             m_defaultIsNone; //< The default for this object is no sound
 	AsciiString      m_defaultEntryName; //< The original name of the default entry
 
+	Bool             m_soundPreviewPlaying; //< The Play button is currently in its "Stop" state
+	std::vector<unsigned char> m_soundPreviewData; //< In-memory WAV the preview plays from (must outlive playback)
+	Int              m_soundComboTextWidth; //< Widest sound-combo entry, measured once in InitSound (px)
+	void stopSoundPreview(void);
+
 	ModifyObjectUndoable *m_posUndoable;
 	Coord3D m_position;
 
@@ -150,6 +155,9 @@ protected:
 	afx_msg void minRangeToDict(void);
 	afx_msg void maxRangeToDict(void);
 	afx_msg void priorityToDict(void);
+	afx_msg void OnPlaySound(void);
+	afx_msg void OnTimer(UINT nIDEvent);
+	afx_msg void OnDestroy();
 		//}}AFX_MSG
 
 	DECLARE_MESSAGE_MAP()

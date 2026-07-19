@@ -38,6 +38,7 @@
 #include "ScriptDialog.h"
 #define ADJUST_VIEW_TIMER 6969
 #define COUNTDOWN_TIMER 6910
+#include "MinimapDialog.h"
 
 #include <mmsystem.h>
 #pragma comment(lib, "winmm.lib")
@@ -230,6 +231,16 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct)
 	if (m_optionsPanelWidth < frameRect.Width()) m_optionsPanelWidth = frameRect.Width();
 	if (m_optionsPanelHeight < frameRect.Height()) m_optionsPanelHeight = frameRect.Height();
 
+	m_waveEditorOptions.Create(IDD_WAVE_EDITOR_OPTIONS, this);
+	m_waveEditorOptions.SetWindowPos(NULL, frameRect.left, frameRect.top, 0, 0, SWP_NOZORDER|SWP_NOSIZE);
+	m_waveEditorOptions.GetWindowRect(&frameRect);
+	// The Wave Editor panel is intentionally wider than the rest; keep its own size and do
+	// NOT roll it into the shared m_optionsPanelWidth, or every other panel (Object
+	// Properties, etc.) would be stretched to match it.  showOptionsDialog() sizes this
+	// panel to its own dimensions.
+	m_waveEditorPanelWidth = frameRect.Width();
+	m_waveEditorPanelHeight = frameRect.Height();
+
 	m_objectOptions.Create(IDD_OBJECT_OPTIONS, this);
 	m_objectOptions.SetWindowPos(NULL, frameRect.left, frameRect.top, 0, 0, SWP_NOZORDER|SWP_NOSIZE);
 	m_objectOptions.GetWindowRect(&frameRect);
@@ -345,9 +356,13 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct)
 	m_minimapDialog = new MinimapDialog(this);
 	m_minimapDialog->Create(MinimapDialog::IDD, this);
 	m_minimapDialog->ShowWindow(::AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "ShowMinimap", 0) ? SW_SHOW : SW_HIDE);
-	frameRect.top = ::AfxGetApp()->GetProfileInt(MINIMAP_SECTION, "Top", 100);
-	frameRect.left = ::AfxGetApp()->GetProfileInt(MINIMAP_SECTION, "Left", 100);
-	m_minimapDialog->SetWindowPos(NULL, frameRect.left, frameRect.top, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
+	// Restore the saved window position. OnExitSizeMove persists Top/Left when the user
+	// finishes moving the dialog; just read them back here. The -32000 sentinel means
+	// "never saved" -- leave the dialog at its default spawn position in that case.
+	int mmTop  = ::AfxGetApp()->GetProfileInt(MINIMAP_SECTION, "Top", -32000);
+	int mmLeft = ::AfxGetApp()->GetProfileInt(MINIMAP_SECTION, "Left", -32000);
+	if (mmTop != -32000 && mmLeft != -32000)
+		m_minimapDialog->SetWindowPos(NULL, mmLeft, mmTop, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
 
 	Int sbf = ::AfxGetApp()->GetProfileInt(MAIN_FRAME_SECTION, "ShowBrushFeedback", 1);
 	if (sbf != 0) {
@@ -553,6 +568,7 @@ void CMainFrame::showOptionsDialog(Int dialogID)
 		case IDD_ROAD_OPTIONS:newOptions  = &m_roadOptions; break;
 		case IDD_MOUND_OPTIONS:newOptions  = &m_moundOptions; break;
 		case IDD_RULER_OPTIONS:newOptions  = &m_rulerOptions; break;
+		case IDD_WAVE_EDITOR_OPTIONS:newOptions  = &m_waveEditorOptions; break;
 		case IDD_FEATHER_OPTIONS:newOptions  = &m_featherOptions; break;
 		case IDD_MESHMOLD_OPTIONS:newOptions  = &m_meshMoldOptions; break;
 		case IDD_WAYPOINT_OPTIONS:newOptions  = &m_waypointOptions; break;
@@ -578,8 +594,16 @@ void CMainFrame::showOptionsDialog(Int dialogID)
 		 */
 		int top = ::AfxGetApp()->GetProfileInt(OPTIONS_PANEL_SECTION, "Top", 10);
 		int left = ::AfxGetApp()->GetProfileInt(OPTIONS_PANEL_SECTION, "Left", 10);
-		newOptions->SetWindowPos(m_curOptions, left, top, 
-			m_optionsPanelWidth, m_optionsPanelHeight, 
+		// The Wave Editor panel keeps its own (wider) size; all other panels use the shared
+		// width/height so adding the Wave Editor didn't stretch them (e.g. Object Properties).
+		int panelW = m_optionsPanelWidth;
+		int panelH = m_optionsPanelHeight;
+		if (dialogID == IDD_WAVE_EDITOR_OPTIONS) {
+			panelW = m_waveEditorPanelWidth;
+			panelH = m_waveEditorPanelHeight;
+		}
+		newOptions->SetWindowPos(m_curOptions, left, top,
+			panelW, panelH,
 			SWP_NOZORDER | SWP_NOACTIVATE );
 		newOptions->ShowWindow(SW_SHOWNA);
 		if (m_curOptions) {
@@ -790,5 +814,8 @@ void CMainFrame::OnEditCameraoptions()
 void CMainFrame::handleCameraChange(void)
 {
 	m_cameraOptions.update();
+
+	if (TheMinimapDialog && TheMinimapDialog->IsWindowVisible())
+		TheMinimapDialog->updateViewBoxOverlay();
 }
 
