@@ -316,7 +316,6 @@ BEGIN
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "Layers List",                 ID_VIEW_LAYERS_LIST
         MENUITEM "Minimap",                     ID_VIEW_MINIMAP
-        MENUITEM "Minimap",                     ID_VIEW_MINIMAP
         MENUITEM SEPARATOR
     END
     POPUP "&Level Of Detail"
